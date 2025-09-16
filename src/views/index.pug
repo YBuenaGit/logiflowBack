@@ -1,0 +1,35 @@
+extends ./layout
+
+block content
+  h2 Inicio
+  p Usa la navegación superior para ir a cada sección.
+
+  if counts
+    h3 Resumen
+    table(border="1" cellpadding="6" cellspacing="0")
+      thead
+        tr
+          th Módulo
+          th Cantidad
+      tbody
+        tr
+          td Clientes
+          td= counts.customers
+        tr
+          td Productos
+          td= counts.products
+        tr
+          td Depósitos
+          td= counts.warehouses
+        tr
+          td Stock
+          td= counts.stock
+        tr
+          td Pedidos
+          td= counts.orders
+        tr
+          td Envíos
+          td= counts.shipments
+        tr
+          td Facturas
+          td= counts.invoices

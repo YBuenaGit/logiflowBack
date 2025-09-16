@@ -1,0 +1,23 @@
+extends ../layout
+
+block content
+  h2 Pedidos
+  if !orders || orders.length === 0
+    p No hay pedidos
+  else
+    table(border="1" cellpadding="6" cellspacing="0")
+      thead
+        tr
+          th id
+          th cliente
+          th total
+          th estado
+          th creado
+      tbody
+        each o in orders
+          tr
+            td= o.id
+            td= o.customerName
+            td= o.totalARS
+            td= o.statusLabel
+            td= o.createdAtLocal

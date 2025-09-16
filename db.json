@@ -1,0 +1,153 @@
+{
+  "customers": [
+    {
+      "id": 1,
+      "name": "Acme SA",
+      "email": "acme@example.com",
+      "status": "active",
+      "createdAt": "2025-09-12T23:10:01.859Z",
+      "updatedAt": "2025-09-12T23:10:01.859Z",
+      "deletedAt": null
+    }
+  ],
+  "products": [
+    {
+      "id": 1,
+      "sku": "BOX-M",
+      "name": "Caja Mediana",
+      "priceCents": 1200,
+      "active": true,
+      "createdAt": "2025-09-12T22:57:22.568Z",
+      "updatedAt": "2025-09-12T22:57:22.568Z",
+      "deletedAt": null
+    }
+  ],
+  "warehouses": [
+    {
+      "id": 1,
+      "name": "Depósito Norte",
+      "city": "Tucumán",
+      "createdAt": "2025-09-12T23:02:28.539Z",
+      "updatedAt": "2025-09-12T23:02:28.539Z",
+      "deletedAt": null
+    },
+    {
+      "id": 2,
+      "name": "Depósito Sur",
+      "city": "SM Tucumán",
+      "createdAt": "2025-09-12T23:03:21.678Z",
+      "updatedAt": "2025-09-12T23:03:21.678Z",
+      "deletedAt": null
+    }
+  ],
+  "stock": [
+    {
+      "id": 1,
+      "warehouseId": 1,
+      "productId": 1,
+      "qty": 97
+    },
+    {
+      "id": 2,
+      "warehouseId": 2,
+      "productId": 1,
+      "qty": 46
+    }
+  ],
+  "orders": [
+    {
+      "id": 1,
+      "customerId": 1,
+      "warehouseId": 1,
+      "items": [
+        {
+          "productId": 1,
+          "qty": 3
+        }
+      ],
+      "status": "delivered",
+      "totalCents": 3600,
+      "createdAt": "2025-09-12T23:11:59.143Z",
+      "updatedAt": "2025-09-12T23:23:45.257Z"
+    },
+    {
+      "id": 2,
+      "customerId": 1,
+      "warehouseId": 2,
+      "items": [
+        {
+          "productId": 1,
+          "qty": 2
+        }
+      ],
+      "status": "allocated",
+      "totalCents": 2400,
+      "createdAt": "2025-09-13T01:58:39.748Z",
+      "updatedAt": "2025-09-13T01:58:39.748Z"
+    },
+    {
+      "id": 3,
+      "customerId": 1,
+      "warehouseId": 2,
+      "items": [
+        {
+          "productId": 1,
+          "qty": 2
+        }
+      ],
+      "status": "allocated",
+      "totalCents": 2400,
+      "createdAt": "2025-09-13T02:01:01.423Z",
+      "updatedAt": "2025-09-13T02:01:01.423Z"
+    }
+  ],
+  "shipments": [
+    {
+      "id": 1,
+      "orderId": 1,
+      "status": "delivered",
+      "origin": {
+        "warehouseId": 1
+      },
+      "destination": {
+        "address": "San martin al 200 - San Miguel de Tucumán"
+      },
+      "tracking": [
+        {
+          "ts": "2025-09-12T23:20:35.319Z",
+          "status": "created"
+        },
+        {
+          "ts": "2025-09-12T23:22:31.007Z",
+          "status": "out_for_delivery"
+        },
+        {
+          "ts": "2025-09-12T23:23:45.256Z",
+          "status": "delivered"
+        }
+      ],
+      "createdAt": "2025-09-12T23:20:35.319Z",
+      "updatedAt": "2025-09-12T23:23:45.256Z"
+    }
+  ],
+  "invoices": [
+    {
+      "id": 1,
+      "orderId": 1,
+      "customerId": 1,
+      "amountCents": 5960,
+      "status": "paid",
+      "createdAt": "2025-09-12T23:29:16.800Z",
+      "updatedAt": "2025-09-12T23:31:04.355Z"
+    }
+  ],
+  "counters": {
+    "customers": 2,
+    "products": 2,
+    "warehouses": 3,
+    "stock": 3,
+    "orders": 4,
+    "shipments": 2,
+    "invoices": 2
+  }
+}

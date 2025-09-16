@@ -1,0 +1,21 @@
+extends ../layout
+
+block content
+  h2 Clientes
+  if !customers || customers.length === 0
+    p No hay clientes
+  else
+    table(border="1" cellpadding="6" cellspacing="0")
+      thead
+        tr
+          th id
+          th nombre
+          th correo
+          th estado
+      tbody
+        each c in customers
+          tr
+            td= c.id
+            td= c.name
+            td= c.email
+            td= c.status

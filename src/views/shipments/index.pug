@@ -1,0 +1,31 @@
+extends ../layout
+
+block content
+  h2 Envíos
+  if !shipments || shipments.length === 0
+    p No hay envíos
+  else
+    table(border="1" cellpadding="6" cellspacing="0")
+      thead
+        tr
+          th id
+          th pedido
+          th estado
+          th origen
+          th destino
+          th actualizado
+      tbody
+        each s in shipments
+          tr
+            td= s.id
+            td= s.orderId
+            td= s.statusLabel
+            td= `Depósito ${s.originWarehouseId}`
+            td= s.destinationAddress
+            td= s.updatedAtLocal
+          if s.tracking && s.tracking.length
+            tr
+              td(colspan='6')
+                ul
+                  each t in s.tracking
+                    li= `${t.tsLocal} - ${t.statusLabel}`

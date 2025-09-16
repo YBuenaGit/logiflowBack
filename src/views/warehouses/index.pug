@@ -1,0 +1,22 @@
+extends ../layout
+
+block content
+  h2 Depósitos
+  if !warehouses || warehouses.length === 0
+    p No hay depósitos
+  else
+    table(border="1" cellpadding="6" cellspacing="0")
+      thead
+        tr
+          th id
+          th nombre
+          th ciudad
+          th items en stock
+      tbody
+        each w in warehouses
+          tr
+            td= w.id
+            td= w.name
+            td= w.city
+            td= w.itemsEnStock
+

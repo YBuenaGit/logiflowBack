@@ -1,0 +1,25 @@
+extends ../layout
+
+block content
+  h2 Facturas
+  if !invoices || invoices.length === 0
+    p No hay facturas
+  else
+    table(border="1" cellpadding="6" cellspacing="0")
+      thead
+        tr
+          th id
+          th pedido
+          th cliente
+          th monto
+          th estado
+          th emitida
+      tbody
+        each i in invoices
+          tr
+            td= i.id
+            td= i.orderId
+            td= i.customerName
+            td= i.amountARS
+            td= i.statusLabel
+            td= i.createdAtLocal
