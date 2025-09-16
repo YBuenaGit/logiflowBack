@@ -1,23 +1,26 @@
 extends ../layout
 
-block content
-  h2 Stock
-  if !stock || stock.length === 0
-    p No hay registros de stock
-  else
-    table(border="1" cellpadding="6" cellspacing="0")
-      thead
-        tr
-          th id
-          th depósito
-          th producto
-          th cantidad
-      tbody
-        each s in stock
-          tr
-            td= s.id
-            td= s.warehouseName
-            td
-              | #{s.productSku} - #{s.productName}
-            td= s.qty
+block vars
+  - var activeNav = 'stock'
 
+block content
+  h2.section-title Stock
+  if !stock || stock.length === 0
+    .card
+      p.empty No hay registros de stock
+  else
+    .table-wrapper
+      table.table
+        thead
+          tr
+            th ID
+            th Deposito
+            th Producto
+            th Cantidad
+        tbody
+          each s in stock
+            tr
+              td= s.id
+              td= s.warehouseName
+              td #{s.productSku} - #{s.productName}
+              td= s.qty

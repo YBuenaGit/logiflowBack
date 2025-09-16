@@ -3,6 +3,11 @@ const { db } = require("../db/memory");
 
 const router = express.Router();
 
+router.use((req, res, next) => {
+  res.set("Content-Type", "text/html; charset=utf-8");
+  next();
+});
+
 // Helpers de formato (reutilizables en este router)
 function formatARS(cents) {
   const value = Number(cents || 0) / 100;
@@ -17,7 +22,7 @@ function getTz(req) {
   return req.query.tz || "America/Argentina/Tucuman";
 }
 
-// Helper de traducci贸n de estados
+// Helper de traducci髇 de estados
 function translateStatus(kind, code) {
   const maps = {
     order: {
@@ -43,7 +48,7 @@ function translateStatus(kind, code) {
   return map[code] || code;
 }
 
-// 脥ndice de vistas
+// 蚽dice de vistas
 router.get("/", (req, res) => {
   const counts = {
     customers: db.customers.filter((c) => c.deletedAt === null).length,
@@ -94,7 +99,7 @@ router.get("/products", (req, res) => {
   return res.render("products/index", { products });
 });
 
-// Dep贸sitos
+// Dep髎itos
 router.get("/warehouses", (req, res) => {
   const warehouses = db.warehouses
     .filter((w) => w.deletedAt === null)
@@ -107,7 +112,7 @@ router.get("/warehouses", (req, res) => {
   return res.render("warehouses/index", { warehouses });
 });
 
-// Env铆os
+// Env韔s
 router.get("/shipments", (req, res) => {
   const tz = getTz(req);
   const shipments = db.shipments.map((s) => ({
@@ -152,13 +157,13 @@ router.get("/stock", (req, res) => {
     const p = db.products.find((x) => x.id === s.productId) || {};
     return {
       id: s.id,
-      warehouseName: w && w.name ? w.name : `Dep贸sito ${s.warehouseId}`,
+      warehouseName: w && w.name ? w.name : `Dep髎ito ${s.warehouseId}`,
       productSku: p && p.sku ? p.sku : String(s.productId),
       productName: p && p.name ? p.name : "",
       qty: s.qty,
     };
   });
-  // Ordenar por dep贸sito y luego por SKU (opcional)
+  // Ordenar por dep髎ito y luego por SKU (opcional)
   join.sort((a, b) => {
     const wa = (a.warehouseName || "").localeCompare(b.warehouseName || "");
     if (wa !== 0) return wa;

@@ -1,18 +1,217 @@
-html
+block vars
+  - var activeNav = ''
+
+doctype html
+html(lang='es')
   head
-    title LogiFlow  Grupo 14
+    meta(charset='utf-8')
+    meta(name='viewport', content='width=device-width, initial-scale=1')
+    title LogiFlow - Grupo 14
+    style.
+      :root {
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        background: #f4f6fb;
+        color: #1f2937;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial, sans-serif;
+        line-height: 1.6;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: none;
+      }
+      header.app-header {
+        background: linear-gradient(120deg, #1d4ed8, #312e81);
+        color: #ffffff;
+        padding: 1.5rem 2.5rem;
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.25);
+      }
+      .brand {
+        margin: 0;
+        font-size: 1.65rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      nav.main-nav {
+        margin-top: 1rem;
+      }
+      nav.main-nav ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      nav.main-nav a {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.5rem 1rem;
+        border-radius: 999px;
+        font-weight: 500;
+        color: rgba(255, 255, 255, 0.9);
+        transition: background 0.2s ease, transform 0.2s ease;
+      }
+      nav.main-nav a:hover,
+      nav.main-nav a[aria-current='page'] {
+        background: rgba(255, 255, 255, 0.25);
+        color: #ffffff;
+        transform: translateY(-1px);
+      }
+      main.content {
+        flex: 1;
+        width: 100%;
+        max-width: 1240px;
+        margin: 0 auto;
+        padding: 2.5rem 2rem 3rem;
+      }
+      .section-title {
+        margin: 0 0 1.5rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid #e2e8f0;
+        font-size: 1.6rem;
+        font-weight: 600;
+        color: #1d4ed8;
+      }
+      .lead {
+        margin: 0;
+        color: #475569;
+      }
+      .card {
+        background: #ffffff;
+        border-radius: 1rem;
+        padding: 1.5rem;
+        box-shadow: 0 20px 35px rgba(15, 23, 42, 0.12);
+      }
+      .card + .card {
+        margin-top: 1.5rem;
+      }
+      .summary-grid {
+        display: grid;
+        gap: 1.5rem;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      }
+      .summary-title {
+        margin: 0 0 1.25rem;
+        letter-spacing: 0.2em;
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        color: #475569;
+      }
+      .summary-card {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 0.75rem;
+        text-align: center;
+        padding: 1.5rem;
+        border-radius: 1rem;
+        background: linear-gradient(160deg, rgba(255, 255, 255, 0.96), rgba(226, 232, 240, 0.9));
+        box-shadow: 0 12px 30px rgba(148, 163, 184, 0.28);
+      }
+      .summary-card .label {
+        font-size: 0.8rem;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: #475569;
+      }
+      .summary-card .value {
+        font-size: 2.4rem;
+        font-weight: 700;
+        color: #0f172a;
+      }
+      .table-wrapper {
+        overflow: hidden;
+        border-radius: 1rem;
+        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.15);
+        background: #ffffff;
+      }
+      .table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.95rem;
+      }
+      .table thead th {
+        position: sticky;
+        top: 0;
+        background: #eef2ff;
+        color: #312e81;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.75rem;
+        padding: 0.75rem 1rem;
+      }
+      .table tbody td {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid #e2e8f0;
+        color: #1f2933;
+      }
+      .table tbody tr:nth-child(odd) td {
+        background: #f8fafc;
+      }
+      .table tbody tr:hover td {
+        background: #e2e8f0;
+      }
+      .empty {
+        margin: 0;
+        text-align: center;
+        color: #64748b;
+        font-style: italic;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.3rem 0.8rem;
+        border-radius: 999px;
+        background: #e0f2fe;
+        color: #075985;
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-transform: capitalize;
+      }
+      .timeline {
+        margin: 0;
+        padding-left: 1.25rem;
+        color: #475569;
+      }
+      .timeline li::marker {
+        color: #1d4ed8;
+        font-weight: 600;
+      }
+      footer.footer {
+        margin-top: auto;
+        text-align: center;
+        padding: 1.5rem 0 2rem;
+        color: #94a3b8;
+        font-size: 0.85rem;
+      }
   body
-    header
-      h1 LogiFlow  Grupo 14
-      nav
+    header.app-header
+      h1.brand LogiFlow - Grupo 14
+      nav.main-nav
         ul
-          li: a(href='/views') Inicio
-          li: a(href='/views/customers') Clientes
-          li: a(href='/views/orders') Pedidos
-          li: a(href='/views/products') Productos
-          li: a(href='/views/warehouses') Depósitos
-          li: a(href='/views/shipments') Envíos
-          li: a(href='/views/invoices') Facturas
-          li: a(href='/views/stock') Stock
-    main
+          li: a(href='/views', aria-current=activeNav === 'home' ? 'page' : undefined) Inicio
+          li: a(href='/views/customers', aria-current=activeNav === 'customers' ? 'page' : undefined) Clientes
+          li: a(href='/views/orders', aria-current=activeNav === 'orders' ? 'page' : undefined) Pedidos
+          li: a(href='/views/products', aria-current=activeNav === 'products' ? 'page' : undefined) Productos
+          li: a(href='/views/warehouses', aria-current=activeNav === 'warehouses' ? 'page' : undefined) Depositos
+          li: a(href='/views/shipments', aria-current=activeNav === 'shipments' ? 'page' : undefined) Envios
+          li: a(href='/views/invoices', aria-current=activeNav === 'invoices' ? 'page' : undefined) Facturas
+          li: a(href='/views/stock', aria-current=activeNav === 'stock' ? 'page' : undefined) Stock
+    main.content
       block content
+    block footer
+      footer.footer LogiFlow - Grupo 14

@@ -8,6 +8,15 @@
       "createdAt": "2025-09-12T23:10:01.859Z",
       "updatedAt": "2025-09-12T23:10:01.859Z",
       "deletedAt": null
+    },
+    {
+      "id": 2,
+      "name": "Soylent SRL",
+      "email": "soylent@example.com",
+      "status": "active",
+      "createdAt": "2025-09-16T22:33:13.772Z",
+      "updatedAt": "2025-09-16T22:33:13.772Z",
+      "deletedAt": null
     }
   ],
   "products": [
@@ -19,6 +28,26 @@
       "active": true,
       "createdAt": "2025-09-12T22:57:22.568Z",
       "updatedAt": "2025-09-12T22:57:22.568Z",
+      "deletedAt": null
+    },
+    {
+      "id": 2,
+      "sku": "TAPE-50",
+      "name": "Cinta de Embalaje 50mm",
+      "priceCents": 800,
+      "active": true,
+      "createdAt": "2025-09-16T22:32:38.044Z",
+      "updatedAt": "2025-09-16T22:32:38.044Z",
+      "deletedAt": null
+    },
+    {
+      "id": 3,
+      "sku": "WRAP-500",
+      "name": "Film Stretch 500mm",
+      "priceCents": 2500,
+      "active": true,
+      "createdAt": "2025-09-16T22:33:04.584Z",
+      "updatedAt": "2025-09-16T22:33:04.584Z",
       "deletedAt": null
     }
   ],
@@ -52,6 +81,12 @@
       "warehouseId": 2,
       "productId": 1,
       "qty": 46
+    },
+    {
+      "id": 3,
+      "warehouseId": 1,
+      "productId": 3,
+      "qty": 75
     }
   ],
   "orders": [
@@ -99,6 +134,21 @@
       "totalCents": 2400,
       "createdAt": "2025-09-13T02:01:01.423Z",
       "updatedAt": "2025-09-13T02:01:01.423Z"
+    },
+    {
+      "id": 4,
+      "customerId": 2,
+      "warehouseId": 1,
+      "items": [
+        {
+          "productId": 3,
+          "qty": 5
+        }
+      ],
+      "status": "shipped",
+      "totalCents": 12500,
+      "createdAt": "2025-09-16T22:34:40.445Z",
+      "updatedAt": "2025-09-16T22:35:14.294Z"
     }
   ],
   "shipments": [
@@ -128,6 +178,25 @@
       ],
       "createdAt": "2025-09-12T23:20:35.319Z",
       "updatedAt": "2025-09-12T23:23:45.256Z"
+    },
+    {
+      "id": 2,
+      "orderId": 4,
+      "status": "created",
+      "origin": {
+        "warehouseId": 1
+      },
+      "destination": {
+        "address": "Yerba Buena - Tucumán"
+      },
+      "tracking": [
+        {
+          "ts": "2025-09-16T22:35:14.292Z",
+          "status": "created"
+        }
+      ],
+      "createdAt": "2025-09-16T22:35:14.292Z",
+      "updatedAt": "2025-09-16T22:35:14.292Z"
     }
   ],
   "invoices": [
@@ -142,12 +211,12 @@
     }
   ],
   "counters": {
-    "customers": 2,
-    "products": 2,
+    "customers": 3,
+    "products": 4,
     "warehouses": 3,
-    "stock": 3,
-    "orders": 4,
-    "shipments": 2,
+    "stock": 4,
+    "orders": 5,
+    "shipments": 3,
     "invoices": 2
   }
 }

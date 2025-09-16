@@ -1,31 +1,37 @@
 extends ../layout
 
+block vars
+  - var activeNav = 'shipments'
+
 block content
-  h2 Envíos
+  h2.section-title Envios
   if !shipments || shipments.length === 0
-    p No hay envíos
+    .card
+      p.empty No hay envios
   else
-    table(border="1" cellpadding="6" cellspacing="0")
-      thead
-        tr
-          th id
-          th pedido
-          th estado
-          th origen
-          th destino
-          th actualizado
-      tbody
-        each s in shipments
+    .table-wrapper
+      table.table
+        thead
           tr
-            td= s.id
-            td= s.orderId
-            td= s.statusLabel
-            td= `Depósito ${s.originWarehouseId}`
-            td= s.destinationAddress
-            td= s.updatedAtLocal
-          if s.tracking && s.tracking.length
+            th ID
+            th Pedido
+            th Estado
+            th Origen
+            th Destino
+            th Actualizado
+        tbody
+          each s in shipments
             tr
-              td(colspan='6')
-                ul
-                  each t in s.tracking
-                    li= `${t.tsLocal} - ${t.statusLabel}`
+              td= s.id
+              td= s.orderId
+              td
+                span.badge= s.statusLabel
+              td= `Deposito ${s.originWarehouseId}`
+              td= s.destinationAddress
+              td= s.updatedAtLocal
+            if s.tracking && s.tracking.length
+              tr
+                td(colspan='6')
+                  ul.timeline
+                    each t in s.tracking
+                      li= `${t.tsLocal} - ${t.statusLabel}`

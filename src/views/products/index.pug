@@ -1,24 +1,28 @@
 extends ../layout
 
-block content
-  h2 Productos
-  if !products || products.length === 0
-    p No hay productos
-  else
-    table(border="1" cellpadding="6" cellspacing="0")
-      thead
-        tr
-          th id
-          th sku
-          th nombre
-          th precio
-          th activo
-      tbody
-        each p in products
-          tr
-            td= p.id
-            td= p.sku
-            td= p.name
-            td= p.priceARS
-            td= p.active ? 'sí' : 'no'
+block vars
+  - var activeNav = 'products'
 
+block content
+  h2.section-title Productos
+  if !products || products.length === 0
+    .card
+      p.empty No hay productos
+  else
+    .table-wrapper
+      table.table
+        thead
+          tr
+            th ID
+            th SKU
+            th Nombre
+            th Precio
+            th Activo
+        tbody
+          each p in products
+            tr
+              td= p.id
+              td= p.sku
+              td= p.name
+              td= p.priceARS
+              td= p.active ? 'si' : 'no'

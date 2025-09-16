@@ -1,35 +1,34 @@
 extends ./layout
 
-block content
-  h2 Inicio
-  p Usa la navegación superior para ir a cada sección.
+block vars
+  - var activeNav = 'home'
 
+block content
+  h2.section-title Inicio
+  .card
+    p.lead Usa la navegacion superior para ir a cada seccion.
   if counts
-    h3 Resumen
-    table(border="1" cellpadding="6" cellspacing="0")
-      thead
-        tr
-          th Módulo
-          th Cantidad
-      tbody
-        tr
-          td Clientes
-          td= counts.customers
-        tr
-          td Productos
-          td= counts.products
-        tr
-          td Depósitos
-          td= counts.warehouses
-        tr
-          td Stock
-          td= counts.stock
-        tr
-          td Pedidos
-          td= counts.orders
-        tr
-          td Envíos
-          td= counts.shipments
-        tr
-          td Facturas
-          td= counts.invoices
+    .card
+      h3.summary-title Resumen
+      .summary-grid
+        article.summary-card
+          span.label Clientes
+          span.value= counts.customers
+        article.summary-card
+          span.label Productos
+          span.value= counts.products
+        article.summary-card
+          span.label Depositos
+          span.value= counts.warehouses
+        article.summary-card
+          span.label Stock
+          span.value= counts.stock
+        article.summary-card
+          span.label Pedidos
+          span.value= counts.orders
+        article.summary-card
+          span.label Envios
+          span.value= counts.shipments
+        article.summary-card
+          span.label Facturas
+          span.value= counts.invoices

@@ -1,25 +1,31 @@
 extends ../layout
 
+block vars
+  - var activeNav = 'invoices'
+
 block content
-  h2 Facturas
+  h2.section-title Facturas
   if !invoices || invoices.length === 0
-    p No hay facturas
+    .card
+      p.empty No hay facturas
   else
-    table(border="1" cellpadding="6" cellspacing="0")
-      thead
-        tr
-          th id
-          th pedido
-          th cliente
-          th monto
-          th estado
-          th emitida
-      tbody
-        each i in invoices
+    .table-wrapper
+      table.table
+        thead
           tr
-            td= i.id
-            td= i.orderId
-            td= i.customerName
-            td= i.amountARS
-            td= i.statusLabel
-            td= i.createdAtLocal
+            th ID
+            th Pedido
+            th Cliente
+            th Monto
+            th Estado
+            th Emitida
+        tbody
+          each i in invoices
+            tr
+              td= i.id
+              td= i.orderId
+              td= i.customerName
+              td= i.amountARS
+              td
+                span.badge= i.statusLabel
+              td= i.createdAtLocal
