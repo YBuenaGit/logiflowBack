@@ -1,27 +1,23 @@
 const { httpError } = require("../utils/error");
-const { validateCreateInvoice, validateInvoiceStatusTransition } = require("../utils/validate");
-const Invoices = require("../models/invoices.model");
 const { db } = require("../db/memory");
-
-function findOrderById(id) {
-  return db.orders.find((o) => o.id === id);
-}
+const Invoices = require("../models/invoices.model");
+const {
+  createInvoice,
+  updateInvoiceStatus,
+  InvoicesServiceError,
+} = require("../services/invoices.service");
 
 async function create(req, res) {
   try {
-    const errors = validateCreateInvoice(req.body || {});
-    if (errors.length) return httpError(res, 400, "VALIDATION_ERROR", { details: errors });
-    const orderId = parseInt(req.body.orderId, 10);
-    const order = findOrderById(orderId);
-    if (!order) return httpError(res, 404, "Order no encontrado");
-    if (order.status !== "delivered") return httpError(res, 409, "Order no estÃ¡ en estado 'delivered'");
-    const exists = db.invoices.some((i) => i.orderId === orderId);
-    if (exists) return httpError(res, 409, "Order ya tiene invoice");
-    const shippingFeeCents = 2000 + Math.round(order.totalCents * 0.1);
-    const amountCents = order.totalCents + shippingFeeCents;
-    const invoice = Invoices.create({ orderId, customerId: order.customerId, amountCents });
+    const invoice = createInvoice(req.body || {});
     return res.status(201).json(invoice);
   } catch (err) {
+    if (err instanceof InvoicesServiceError) {
+      if (err.code === "VALIDATION_ERROR") {
+        return httpError(res, err.status, err.code, { details: err.details || [] });
+      }
+      return httpError(res, err.status, err.message || err.code);
+    }
     return httpError(res, 500, "INTERNAL_ERROR");
   }
 }
@@ -91,16 +87,15 @@ async function patch(req, res) {
   try {
     const id = parseInt(req.params.id, 10);
     if (!Number.isFinite(id)) return httpError(res, 404, "Invoice no encontrado");
-    const invoice = Invoices.findById(id);
-    if (!invoice) return httpError(res, 404, "Invoice no encontrado");
-    const nextStatus = (req.body?.status || "").toString();
-    if (!nextStatus) return httpError(res, 400, "status requerido");
-    if (!validateInvoiceStatusTransition(invoice.status, nextStatus)) {
-      return httpError(res, 400, "TRANSITION_NOT_ALLOWED");
-    }
-    Invoices.setStatus(invoice, nextStatus);
+    const invoice = updateInvoiceStatus(id, req.body || {});
     return res.status(200).json(invoice);
   } catch (err) {
+    if (err instanceof InvoicesServiceError) {
+      if (err.code === "VALIDATION_ERROR") {
+        return httpError(res, err.status, err.code, { details: err.details || [] });
+      }
+      return httpError(res, err.status, err.message || err.code);
+    }
     return httpError(res, 500, "INTERNAL_ERROR");
   }
 }

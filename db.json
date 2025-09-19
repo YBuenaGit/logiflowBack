@@ -17,6 +17,15 @@
       "createdAt": "2025-09-16T22:33:13.772Z",
       "updatedAt": "2025-09-16T22:33:13.772Z",
       "deletedAt": null
+    },
+    {
+      "id": 3,
+      "name": "Lomo S.A",
+      "email": "lomito1@gmail.com",
+      "status": "active",
+      "createdAt": "2025-09-19T01:18:39.494Z",
+      "updatedAt": "2025-09-19T01:18:54.020Z",
+      "deletedAt": null
     }
   ],
   "products": [
@@ -49,6 +58,16 @@
       "createdAt": "2025-09-16T22:33:04.584Z",
       "updatedAt": "2025-09-16T22:33:04.584Z",
       "deletedAt": null
+    },
+    {
+      "id": 4,
+      "sku": "CINTA-M",
+      "name": "Cinta Métrica",
+      "priceCents": 2000,
+      "active": true,
+      "createdAt": "2025-09-19T01:20:34.298Z",
+      "updatedAt": "2025-09-19T01:20:34.298Z",
+      "deletedAt": null
     }
   ],
   "warehouses": [
@@ -66,6 +85,14 @@
       "city": "SM Tucumán",
       "createdAt": "2025-09-12T23:03:21.678Z",
       "updatedAt": "2025-09-12T23:03:21.678Z",
+      "deletedAt": null
+    },
+    {
+      "id": 3,
+      "name": "Deposito Centro",
+      "city": "SMT",
+      "createdAt": "2025-09-19T01:20:04.865Z",
+      "updatedAt": "2025-09-19T01:20:04.865Z",
       "deletedAt": null
     }
   ],
@@ -87,6 +114,12 @@
       "warehouseId": 1,
       "productId": 3,
       "qty": 75
+    },
+    {
+      "id": 4,
+      "warehouseId": 3,
+      "productId": 4,
+      "qty": 80
     }
   ],
   "orders": [
@@ -149,6 +182,21 @@
       "totalCents": 12500,
       "createdAt": "2025-09-16T22:34:40.445Z",
       "updatedAt": "2025-09-16T22:35:14.294Z"
+    },
+    {
+      "id": 5,
+      "customerId": 3,
+      "warehouseId": 3,
+      "items": [
+        {
+          "productId": 4,
+          "qty": 20
+        }
+      ],
+      "status": "delivered",
+      "totalCents": 40000,
+      "createdAt": "2025-09-19T01:38:32.885Z",
+      "updatedAt": "2025-09-19T01:39:36.586Z"
     }
   ],
   "shipments": [
@@ -197,6 +245,35 @@
       ],
       "createdAt": "2025-09-16T22:35:14.292Z",
       "updatedAt": "2025-09-16T22:35:14.292Z"
+    },
+    {
+      "id": 3,
+      "orderId": 5,
+      "status": "delivered",
+      "origin": {
+        "warehouseId": 3
+      },
+      "destination": {
+        "address": "Alicia Moreau de Justo 701"
+      },
+      "tracking": [
+        {
+          "ts": "2025-09-19T01:39:10.379Z",
+          "status": "created"
+        },
+        {
+          "ts": "2025-09-19T01:39:20.600Z",
+          "status": "out_for_delivery",
+          "note": "Salió"
+        },
+        {
+          "ts": "2025-09-19T01:39:36.584Z",
+          "status": "delivered",
+          "note": "Entregado OK"
+        }
+      ],
+      "createdAt": "2025-09-19T01:39:10.379Z",
+      "updatedAt": "2025-09-19T01:39:36.584Z"
     }
   ],
   "invoices": [
@@ -208,15 +285,24 @@
       "status": "paid",
       "createdAt": "2025-09-12T23:29:16.800Z",
       "updatedAt": "2025-09-12T23:31:04.355Z"
+    },
+    {
+      "id": 2,
+      "orderId": 5,
+      "customerId": 3,
+      "amountCents": 46000,
+      "status": "paid",
+      "createdAt": "2025-09-19T01:39:44.304Z",
+      "updatedAt": "2025-09-19T01:39:53.630Z"
     }
   ],
   "counters": {
-    "customers": 3,
-    "products": 4,
-    "warehouses": 3,
-    "stock": 4,
-    "orders": 5,
-    "shipments": 3,
-    "invoices": 2
+    "customers": 4,
+    "products": 5,
+    "warehouses": 4,
+    "stock": 5,
+    "orders": 6,
+    "shipments": 4,
+    "invoices": 3
   }
 }

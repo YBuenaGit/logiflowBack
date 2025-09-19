@@ -5,6 +5,52 @@ block vars
 
 block content
   h2.section-title Productos
+
+  .card
+    h3 Nuevo producto
+    form.form-grid(method='post', action='/views/products')
+      .form-field
+        label(for='product-sku') SKU
+        input#product-sku(type='text', name='sku', value=createValues && createValues.sku ? createValues.sku : '', required, autocomplete='off')
+      .form-field
+        label(for='product-name') Nombre
+        input#product-name(type='text', name='name', value=createValues && createValues.name ? createValues.name : '', required, autocomplete='off')
+      .form-field
+        label(for='product-price') Precio (ARS)
+        input#product-price(type='number', step='0.01', min='0', name='price', value=createValues && createValues.price ? createValues.price : '', required, autocomplete='off')
+      .form-actions
+        button.btn.btn-primary(type='submit') Crear producto
+    if createErrors && createErrors.length
+      ul.form-errors
+        each err in createErrors
+          li= err
+
+  if editProduct
+    .card
+      h3= `Editar producto #${editProduct.id}`
+      form.form-grid(method='post', action=`/views/products/${editProduct.id}/update`)
+        .form-field
+          label(for='edit-sku') SKU
+          input#edit-sku(type='text', value=editProduct.sku || '', readonly)
+        .form-field
+          label(for='edit-name') Nombre
+          input#edit-name(type='text', name='name', value=editProduct.name || '', required)
+        .form-field
+          label(for='edit-price') Precio (ARS)
+          input#edit-price(type='number', step='0.01', min='0', name='price', value=editProduct.price || '', required)
+        .form-field
+          label(for='edit-active') Estado
+          select#edit-active(name='active', required)
+            option(value='true', selected=editProduct.active === true) Activo
+            option(value='false', selected=editProduct.active === false) Inactivo
+        .form-actions
+          button.btn.btn-primary(type='submit') Guardar cambios
+          a.btn.btn-secondary(href='/views/products') Cancelar
+      if editErrors && editErrors.length
+        ul.form-errors
+          each err in editErrors
+            li= err
+
   if !products || products.length === 0
     .card
       p.empty No hay productos
@@ -17,7 +63,8 @@ block content
             th SKU
             th Nombre
             th Precio
-            th Activo
+            th Estado
+            th Acciones
         tbody
           each p in products
             tr
@@ -25,4 +72,10 @@ block content
               td= p.sku
               td= p.name
               td= p.priceARS
-              td= p.active ? 'si' : 'no'
+              td
+                span.badge= p.active ? 'activo' : 'inactivo'
+              td.actions
+                .action-group
+                  a.btn.btn-secondary(href=`/views/products?edit=${p.id}`) Editar
+                  form.inline-form(method='post', action=`/views/products/${p.id}/delete`)
+                    button.btn.btn-danger(type='submit') Eliminar

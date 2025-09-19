@@ -5,33 +5,85 @@ block vars
 
 block content
   h2.section-title Envios
-  if !shipments || shipments.length === 0
+
+  .card
+    h3 Nuevo envio
+    if !shipmentOptions || !shipmentOptions.orders.length
+      p.empty Necesitas un pedido en estado reservado para generar un envio.
+    else
+      form.form-grid(method='post', action='/views/shipments')
+        .form-field
+          label(for='shipment-order') Pedido
+          select#shipment-order(name='orderId', required)
+            option(value='') Selecciona un pedido
+            each opt in shipmentOptions.orders
+              option(value=opt.id, selected=String(opt.id) === String(createValues.orderId))= opt.label
+        .form-field
+          label(for='shipment-address') Destino
+          input#shipment-address(type='text', name='destinationAddress', value=createValues.destination && createValues.destination.address ? createValues.destination.address : '', required, autocomplete='street-address')
+        .form-field
+          label(for='shipment-lat') Latitud (opcional)
+          input#shipment-lat(type='text', name='destinationLat', value=createValues.destination && createValues.destination.lat ? createValues.destination.lat : '', autocomplete='off')
+        .form-field
+          label(for='shipment-lng') Longitud (opcional)
+          input#shipment-lng(type='text', name='destinationLng', value=createValues.destination && createValues.destination.lng ? createValues.destination.lng : '', autocomplete='off')
+        .form-actions
+          button.btn.btn-primary(type='submit') Crear envio
+      if createErrors && createErrors.length
+        ul.form-errors
+          each err in createErrors
+            li= err
+
+  if !shipments || !shipments.length
     .card
-      p.empty No hay envios
+      p.empty No hay envios registrados
   else
     .table-wrapper
       table.table
         thead
           tr
             th ID
-            th Pedido
-            th Estado
-            th Origen
+            th Pedido / Cliente
             th Destino
+            th Estado
             th Actualizado
+            th Acciones
         tbody
           each s in shipments
             tr
               td= s.id
-              td= s.orderId
+              td
+                div= `Pedido #${s.orderId}`
+                if s.customerName
+                  div.order-meta= `Cliente: ${s.customerName}`
+                if s.warehouseName
+                  div.order-meta= `Origen: ${s.warehouseName}`
+              td= s.destinationAddress || 'Sin direccion'
               td
                 span.badge= s.statusLabel
-              td= `Deposito ${s.originWarehouseId}`
-              td= s.destinationAddress
               td= s.updatedAtLocal
-            if s.tracking && s.tracking.length
-              tr
-                td(colspan='6')
-                  ul.timeline
+              td.actions
+                .action-group
+                  if s.nextStatuses && s.nextStatuses.length
+                    form.inline-form(method='post', action=`/views/shipments/${s.id}/status`)
+                      select(name='status', required)
+                        option(value='') Actualizar estado
+                        each ns in s.nextStatuses
+                          option(value=ns.code)= ns.label
+                      input(type='text', name='note', placeholder='Nota (opcional)')
+                      button.btn.btn-secondary(type='submit') Actualizar
+                  if s.status !== 'delivered' && s.status !== 'cancelled'
+                    form.inline-form(method='post', action=`/views/shipments/${s.id}/cancel`)
+                      button.btn.btn-danger(type='submit') Cancelar
+            tr.order-items-row
+              td(colspan='6')
+                if statusErrors && statusErrors[s.id] && statusErrors[s.id].length
+                  ul.form-errors
+                    each err in statusErrors[s.id]
+                      li= err
+                if s.tracking && s.tracking.length
+                  ul.order-item-list
                     each t in s.tracking
-                      li= `${t.tsLocal} - ${t.statusLabel}`
+                      li= t.note ? `${t.tsLocal} - ${t.statusLabel} (${t.note})` : `${t.tsLocal} - ${t.statusLabel}`
+                else
+                  p.form-hint Sin eventos de tracking

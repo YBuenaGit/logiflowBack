@@ -5,27 +5,69 @@ block vars
 
 block content
   h2.section-title Facturas
-  if !invoices || invoices.length === 0
+
+  .card
+    h3 Nueva factura
+    if !invoiceOptions || !invoiceOptions.orders.length
+      p.empty Necesitas un pedido entregado sin facturar para generar una factura.
+    else
+      form.form-grid(method='post', action='/views/invoices')
+        .form-field
+          label(for='invoice-order') Pedido
+          select#invoice-order(name='orderId', required)
+            option(value='') Selecciona un pedido
+            each opt in invoiceOptions.orders
+              option(value=opt.id, selected=String(opt.id) === String(createValues.orderId))= opt.label
+        .form-actions
+          button.btn.btn-primary(type='submit') Crear factura
+      if createErrors && createErrors.length
+        ul.form-errors
+          each err in createErrors
+            li= err
+
+  if !invoices || !invoices.length
     .card
-      p.empty No hay facturas
+      p.empty No hay facturas registradas
   else
     .table-wrapper
       table.table
         thead
           tr
             th ID
-            th Pedido
-            th Cliente
-            th Monto
+            th Pedido / Cliente
+            th Importe
             th Estado
-            th Emitida
+            th Creada
+            th Acciones
         tbody
-          each i in invoices
+          each inv in invoices
             tr
-              td= i.id
-              td= i.orderId
-              td= i.customerName
-              td= i.amountARS
+              td= inv.id
               td
-                span.badge= i.statusLabel
-              td= i.createdAtLocal
+                div= `Pedido #${inv.orderId}`
+                if inv.customerName
+                  div.order-meta= `Cliente: ${inv.customerName}`
+              td= inv.amountARS
+              td
+                span.badge= inv.statusLabel
+              td
+                div= inv.createdAtLocal
+                if inv.updatedAtLocal
+                  div.order-meta Actualizada: #{inv.updatedAtLocal}
+              td.actions
+                .action-group
+                  if inv.nextStatuses && inv.nextStatuses.length
+                    form.inline-form(method='post', action=`/views/invoices/${inv.id}/status`)
+                      select(name='status', required)
+                        option(value='') Actualizar estado
+                        each ns in inv.nextStatuses
+                          option(value=ns.code)= ns.label
+                      button.btn.btn-secondary(type='submit') Actualizar
+            tr.order-items-row
+              td(colspan='6')
+                if statusErrors && statusErrors[inv.id] && statusErrors[inv.id].length
+                  ul.form-errors
+                    each err in statusErrors[inv.id]
+                      li= err
+                else
+                  p.form-hint Estados posibles: #{inv.nextStatuses && inv.nextStatuses.length ? inv.nextStatuses.map(ns => ns.label).join(', ') : 'sin cambios disponibles'}

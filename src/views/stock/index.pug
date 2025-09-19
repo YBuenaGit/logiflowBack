@@ -5,6 +5,71 @@ block vars
 
 block content
   h2.section-title Stock
+
+  .card
+    h3 Ajustar stock
+    if !stockOptions || !stockOptions.warehouses.length || !stockOptions.products.length
+      p.empty Necesitas al menos un deposito y un producto activo para ajustar stock.
+    else
+      form.form-grid(method='post', action='/views/stock/adjust')
+        .form-field
+          label(for='adjust-warehouse') Deposito
+          select#adjust-warehouse(name='warehouseId', required)
+            option(value='') Selecciona un deposito
+            each w in stockOptions.warehouses
+              option(value=w.id, selected=String(w.id) === String(adjustValues.warehouseId))= w.name
+        .form-field
+          label(for='adjust-product') Producto
+          select#adjust-product(name='productId', required)
+            option(value='') Selecciona un producto
+            each p in stockOptions.products
+              option(value=p.id, selected=String(p.id) === String(adjustValues.productId))= p.label
+        .form-field
+          label(for='adjust-delta') Cantidad (+/-)
+          input#adjust-delta(type='number', name='delta', step='1', value=adjustValues.delta || '', required)
+        .form-actions
+          button.btn.btn-primary(type='submit') Actualizar stock
+      p.form-hint Usa valores positivos para sumar y negativos para restar stock.
+    if adjustErrors && adjustErrors.length
+      ul.form-errors
+        each err in adjustErrors
+          li= err
+
+  .card
+    h3 Transferir stock entre depositos
+    if !stockOptions || !stockOptions.warehouses.length || !stockOptions.products.length
+      p.empty Necesitas depositos y productos activos para transferir stock.
+    else
+      form.form-grid(method='post', action='/views/stock/move')
+        .form-field
+          label(for='move-from') Deposito origen
+          select#move-from(name='fromWarehouseId', required)
+            option(value='') Selecciona deposito origen
+            each w in stockOptions.warehouses
+              option(value=w.id, selected=String(w.id) === String(moveValues.fromWarehouseId))= w.name
+        .form-field
+          label(for='move-to') Deposito destino
+          select#move-to(name='toWarehouseId', required)
+            option(value='') Selecciona deposito destino
+            each w in stockOptions.warehouses
+              option(value=w.id, selected=String(w.id) === String(moveValues.toWarehouseId))= w.name
+        .form-field
+          label(for='move-product') Producto
+          select#move-product(name='productId', required)
+            option(value='') Selecciona un producto
+            each p in stockOptions.products
+              option(value=p.id, selected=String(p.id) === String(moveValues.productId))= p.label
+        .form-field
+          label(for='move-qty') Cantidad a transferir
+          input#move-qty(type='number', name='qty', min='1', step='1', value=moveValues.qty || '', required)
+        .form-actions
+          button.btn.btn-primary(type='submit') Transferir
+      p.form-hint Se descontara del deposito origen y se sumara al destino.
+    if moveErrors && moveErrors.length
+      ul.form-errors
+        each err in moveErrors
+          li= err
+
   if !stock || stock.length === 0
     .card
       p.empty No hay registros de stock

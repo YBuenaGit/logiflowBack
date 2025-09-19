@@ -5,6 +5,73 @@ block vars
 
 block content
   h2.section-title Pedidos
+
+  - const canCreateOrder = orderOptions && orderOptions.customers && orderOptions.customers.length > 0 && orderOptions.warehouses && orderOptions.warehouses.length > 0 && orderOptions.products && orderOptions.products.length > 0;
+
+  .card
+    h3 Nuevo pedido
+    if !canCreateOrder
+      p.empty Necesitas al menos un cliente activo, un deposito y un producto activo para crear pedidos.
+    else
+      form(method='post', action='/views/orders')
+        .form-grid
+          .form-field
+            label(for='order-customer') Cliente
+            select#order-customer(name='customerId', required)
+              option(value='') Selecciona un cliente
+              each customer in orderOptions.customers
+                option(value=customer.id, selected=String(customer.id) === String(createValues.customerId))= customer.name
+          .form-field
+            label(for='order-warehouse') Deposito
+            select#order-warehouse(name='warehouseId', required)
+              option(value='') Selecciona un deposito
+              each warehouse in orderOptions.warehouses
+                option(value=warehouse.id, selected=String(warehouse.id) === String(createValues.warehouseId))= warehouse.name
+        .order-items
+          h4 Items del pedido
+          .order-items-header
+            span Producto
+            span Cantidad
+          each item, idx in createItems
+            .order-item-row
+              select(name=`items[${idx}][productId]`)
+                option(value='') Selecciona un producto
+                each product in orderOptions.products
+                  option(value=product.id, selected=String(product.id) === String(item.productId))= product.label
+              input(type='number', name=`items[${idx}][qty]`, min='1', step='1', value=item.qty || '')
+          p.form-hint Puedes dejar filas vacias si no las necesitas.
+        .form-actions
+          button.btn.btn-primary(type='submit') Crear pedido
+      if createErrors && createErrors.length
+        ul.form-errors
+          each err in createErrors
+            li= err
+
+  if editOrder
+    .card
+      h3= `Editar pedido #${editOrder.id}`
+      p.form-hint= `Cliente: ${editOrder.customerName || 'N/D'} | Deposito: ${editOrder.warehouseName || 'N/D'} | Estado actual: ${editOrder.statusLabel}`
+      form(method='post', action=`/views/orders/${editOrder.id}/update`)
+        .order-items
+          .order-items-header
+            span Producto
+            span Cantidad
+          each item, idx in editOrder.items
+            .order-item-row
+              select(name=`items[${idx}][productId]`)
+                option(value='') Selecciona un producto
+                each product in orderOptions.products
+                  option(value=product.id, selected=String(product.id) === String(item.productId))= product.label
+              input(type='number', name=`items[${idx}][qty]`, min='1', step='1', value=item.qty || '')
+          p.form-hint El pedido solo puede modificarse mientras este reservado.
+        .form-actions
+          button.btn.btn-primary(type='submit') Guardar cambios
+          a.btn.btn-secondary(href='/views/orders') Cancelar
+      if editErrors && editErrors.length
+        ul.form-errors
+          each err in editErrors
+            li= err
+
   if !orders || orders.length === 0
     .card
       p.empty No hay pedidos
@@ -14,16 +81,38 @@ block content
         thead
           tr
             th ID
-            th Cliente
+            th Cliente / Deposito
             th Total
+            th Items
             th Estado
             th Creado
+            th Acciones
         tbody
           each o in orders
             tr
               td= o.id
-              td= o.customerName
+              td
+                div= o.customerName || 'N/D'
+                if o.warehouseName
+                  div.order-meta Deposito: #{o.warehouseName}
               td= o.totalARS
+              td= `${o.itemsCount}`
               td
                 span.badge= o.statusLabel
-              td= o.createdAtLocal
+              td
+                div= o.createdAtLocal
+                if o.updatedAtLocal
+                  div.order-meta Actualizado: #{o.updatedAtLocal}
+              td.actions
+                .action-group
+                  if o.canModify
+                    a.btn.btn-secondary(href=`/views/orders?edit=${o.id}`) Editar
+                  if o.canCancel
+                    form.inline-form(method='post', action=`/views/orders/${o.id}/cancel`)
+                      button.btn.btn-danger(type='submit') Cancelar
+            if o.items && o.items.length
+              tr.order-items-row
+                td(colspan='7')
+                  ul.order-item-list
+                    each it in o.items
+                      li= `${it.qty} x ${it.productSku}${it.productName ? ' - ' + it.productName : ''}`

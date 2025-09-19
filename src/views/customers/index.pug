@@ -5,6 +5,46 @@ block vars
 
 block content
   h2.section-title Clientes
+
+  .card
+    h3 Nuevo cliente
+    form.form-grid(method='post', action='/views/customers')
+      .form-field
+        label(for='customer-name') Nombre
+        input#customer-name(type='text', name='name', value=createValues && createValues.name ? createValues.name : '', required, autocomplete='name')
+      .form-field
+        label(for='customer-email') Correo
+        input#customer-email(type='email', name='email', value=createValues && createValues.email ? createValues.email : '', required, autocomplete='email')
+      .form-actions
+        button.btn.btn-primary(type='submit') Crear cliente
+    if createErrors && createErrors.length
+      ul.form-errors
+        each err in createErrors
+          li= err
+
+  if editCustomer
+    .card
+      h3= `Editar cliente #${editCustomer.id}`
+      form.form-grid(method='post', action=`/views/customers/${editCustomer.id}/update`)
+        .form-field
+          label(for='edit-name') Nombre
+          input#edit-name(type='text', name='name', value=editCustomer.name || '', required, autocomplete='name')
+        .form-field
+          label(for='edit-email') Correo
+          input#edit-email(type='email', name='email', value=editCustomer.email || '', required, autocomplete='email')
+        .form-field
+          label(for='edit-status') Estado
+          select#edit-status(name='status', required)
+            option(value='active', selected=editCustomer.status === 'active') Activo
+            option(value='blocked', selected=editCustomer.status === 'blocked') Bloqueado
+        .form-actions
+          button.btn.btn-primary(type='submit') Guardar cambios
+          a.btn.btn-secondary(href='/views/customers') Cancelar
+      if editErrors && editErrors.length
+        ul.form-errors
+          each err in editErrors
+            li= err
+
   if !customers || customers.length === 0
     .card
       p.empty No hay clientes
@@ -17,6 +57,7 @@ block content
             th Nombre
             th Correo
             th Estado
+            th Acciones
         tbody
           each c in customers
             tr
@@ -25,3 +66,8 @@ block content
               td= c.email
               td
                 span.badge= c.status
+              td.actions
+                .action-group
+                  a.btn.btn-secondary(href=`/views/customers?edit=${c.id}`) Editar
+                  form.inline-form(method='post', action=`/views/customers/${c.id}/delete`)
+                    button.btn.btn-danger(type='submit') Eliminar

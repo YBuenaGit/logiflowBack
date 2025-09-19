@@ -5,6 +5,45 @@ block vars
 
 block content
   h2.section-title Depositos
+
+  .card
+    h3 Nuevo deposito
+    form.form-grid(method='post', action='/views/warehouses')
+      .form-field
+        label(for='warehouse-name') Nombre
+        input#warehouse-name(type='text', name='name', value=createValues && createValues.name ? createValues.name : '', required)
+      .form-field
+        label(for='warehouse-city') Ciudad
+        input#warehouse-city(type='text', name='city', value=createValues && createValues.city ? createValues.city : '', required)
+      .form-actions
+        button.btn.btn-primary(type='submit') Crear deposito
+    if createErrors && createErrors.length
+      ul.form-errors
+        each err in createErrors
+          li= err
+
+  if editWarehouse
+    .card
+      h3= `Editar deposito #${editWarehouse.id}`
+      form.form-grid(method='post', action=`/views/warehouses/${editWarehouse.id}/update`)
+        .form-field
+          label(for='edit-warehouse-name') Nombre
+          input#edit-warehouse-name(type='text', name='name', value=editWarehouse.name || '', required)
+        .form-field
+          label(for='edit-warehouse-city') Ciudad
+          input#edit-warehouse-city(type='text', name='city', value=editWarehouse.city || '', required)
+        if typeof editWarehouse.itemsEnStock !== 'undefined'
+          .form-field
+            label Stock vinculado
+            input(type='text', readonly, value=editWarehouse.itemsEnStock)
+        .form-actions
+          button.btn.btn-primary(type='submit') Guardar cambios
+          a.btn.btn-secondary(href='/views/warehouses') Cancelar
+      if editErrors && editErrors.length
+        ul.form-errors
+          each err in editErrors
+            li= err
+
   if !warehouses || warehouses.length === 0
     .card
       p.empty No hay depositos
@@ -17,6 +56,7 @@ block content
             th Nombre
             th Ciudad
             th Items en stock
+            th Acciones
         tbody
           each w in warehouses
             tr
@@ -24,3 +64,8 @@ block content
               td= w.name
               td= w.city
               td= w.itemsEnStock
+              td.actions
+                .action-group
+                  a.btn.btn-secondary(href=`/views/warehouses?edit=${w.id}`) Editar
+                  form.inline-form(method='post', action=`/views/warehouses/${w.id}/delete`)
+                    button.btn.btn-danger(type='submit') Eliminar
