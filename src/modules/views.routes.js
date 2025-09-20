@@ -24,13 +24,12 @@ const {
 const { validateCustomerPayload, isNonEmptyString } = require("../utils/validate");
 
 const router = express.Router();
-
+//(*)
 router.use((req, res, next) => {
   res.set("Content-Type", "text/html; charset=utf-8");
   next();
 });
 
-// Helpers de formato (reutilizables en este router)
 function formatARS(cents) {
   const value = Number(cents || 0) / 100;
   return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(value);
@@ -44,7 +43,6 @@ function getTz(req) {
   return req.query.tz || "America/Argentina/Tucuman";
 }
 
-// Helper de traduccion de estados
 function translateStatus(kind, code) {
   const maps = {
     order: {
