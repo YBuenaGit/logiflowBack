@@ -47,7 +47,11 @@ async function getNextSequence(sequenceName) {
     { $inc: { seq: 1 } },
     { upsert: true, returnDocument: "after" }
   );
-  return result.value.seq;
+  const doc = result && typeof result === "object" && result.value !== undefined ? result.value : result;
+  if (!doc || typeof doc.seq !== "number") {
+    throw new Error(`Failed to retrieve sequence for ${sequenceName}`);
+  }
+  return doc.seq;
 }
 
 async function ensureIndexes() {
@@ -87,4 +91,3 @@ module.exports = {
   getCollection,
   getNextSequence,
 };
-
