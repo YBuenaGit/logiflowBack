@@ -1,4 +1,8 @@
-const { getCollection, getNextSequence } = require("../db/mongo");
+const {
+  getCollection,
+  getNextSequence,
+  unwrapFindAndModifyResult,
+} = require("../db/mongo");
 
 function collection() {
   return getCollection("stock");
@@ -43,12 +47,13 @@ async function adjust(warehouseId, productId, delta) {
     { $inc: { qty: delta } },
     { returnDocument: "after" }
   );
-  if (!result.value) {
+  const doc = unwrapFindAndModifyResult(result);
+  if (!doc) {
     const err = new Error("stock insuficiente");
     err.code = "STOCK_INSUFFICIENT";
     throw err;
   }
-  return result.value;
+  return doc;
 }
 
 async function move(fromWarehouseId, toWarehouseId, productId, qty) {

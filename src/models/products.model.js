@@ -1,4 +1,8 @@
-const { getCollection, getNextSequence } = require("../db/mongo");
+const {
+  getCollection,
+  getNextSequence,
+  unwrapFindAndModifyResult,
+} = require("../db/mongo");
 
 function collection() {
   return getCollection("products");
@@ -50,7 +54,7 @@ async function update(id, fields) {
     { $set: updates },
     { returnDocument: "after" }
   );
-  return result.value;
+  return unwrapFindAndModifyResult(result);
 }
 
 async function softDelete(id) {
@@ -66,7 +70,7 @@ async function softDelete(id) {
     },
     { returnDocument: "after", projection: { id: 1, deletedAt: 1 } }
   );
-  return result.value;
+  return unwrapFindAndModifyResult(result);
 }
 
 async function listActive({ q = "", skip = 0, limit = 20 } = {}) {

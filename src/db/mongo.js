@@ -47,7 +47,7 @@ async function getNextSequence(sequenceName) {
     { $inc: { seq: 1 } },
     { upsert: true, returnDocument: "after" }
   );
-  const doc = result && typeof result === "object" && result.value !== undefined ? result.value : result;
+  const doc = unwrapFindAndModifyResult(result);
   if (!doc || typeof doc.seq !== "number") {
     throw new Error(`Failed to retrieve sequence for ${sequenceName}`);
   }
@@ -90,4 +90,12 @@ module.exports = {
   getDb,
   getCollection,
   getNextSequence,
+  unwrapFindAndModifyResult,
 };
+
+function unwrapFindAndModifyResult(result) {
+  if (result && typeof result === "object" && Object.prototype.hasOwnProperty.call(result, "value")) {
+    return result.value;
+  }
+  return result ?? null;
+}

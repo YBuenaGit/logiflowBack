@@ -1,4 +1,8 @@
-const { getCollection, getNextSequence } = require("../db/mongo");
+const {
+  getCollection,
+  getNextSequence,
+  unwrapFindAndModifyResult,
+} = require("../db/mongo");
 
 function collection() {
   return getCollection("orders");
@@ -36,7 +40,7 @@ async function updateItemsAndTotal(order, newItems, newTotalCents) {
     },
     { returnDocument: "after" }
   );
-  return result.value;
+  return unwrapFindAndModifyResult(result);
 }
 
 async function setStatus(order, status) {
@@ -50,7 +54,7 @@ async function setStatus(order, status) {
     },
     { returnDocument: "after" }
   );
-  return result.value;
+  return unwrapFindAndModifyResult(result);
 }
 
 async function list({ filter = {}, skip = 0, limit = 20, sort = { createdAt: -1 } } = {}) {
