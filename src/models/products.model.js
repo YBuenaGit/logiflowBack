@@ -1,20 +1,29 @@
-const { db, nextId, commit } = require("../db/memory");
+const { getCollection, getNextSequence } = require("../db/mongo");
 
-function findById(id) {
-  return db.products.find((p) => p.id === id);
+function collection() {
+  return getCollection("products");
 }
 
-function isSkuTaken(sku, excludeId = null) {
-  const target = sku;
-  return db.products.some(
-    (p) => p.deletedAt === null && p.sku === target && (excludeId == null || p.id !== excludeId)
-  );
+async function findById(id) {
+  return collection().findOne({ id });
 }
 
-function create({ sku, name, priceCents }) {
+async function isSkuTaken(sku, excludeId = null) {
+  const filter = {
+    sku,
+    deletedAt: null,
+  };
+  if (excludeId != null) {
+    filter.id = { $ne: excludeId };
+  }
+  const existing = await collection().findOne(filter);
+  return Boolean(existing);
+}
+
+async function create({ sku, name, priceCents }) {
   const now = new Date().toISOString();
   const product = {
-    id: nextId("products"),
+    id: await getNextSequence("products"),
     sku,
     name,
     priceCents,
@@ -23,31 +32,77 @@ function create({ sku, name, priceCents }) {
     updatedAt: now,
     deletedAt: null,
   };
-  db.products.push(product);
-  commit();
+  await collection().insertOne(product);
   return product;
 }
 
-function update(id, fields) {
-  const product = findById(id);
-  if (!product) return null;
-  if (fields.name !== undefined) product.name = fields.name;
-  if (fields.priceCents !== undefined) product.priceCents = fields.priceCents;
-  if (fields.active !== undefined) product.active = fields.active;
-  product.updatedAt = new Date().toISOString();
-  commit();
-  return product;
+async function update(id, fields) {
+  const updates = {};
+  if (fields.name !== undefined) updates.name = fields.name;
+  if (fields.priceCents !== undefined) updates.priceCents = fields.priceCents;
+  if (fields.active !== undefined) updates.active = fields.active;
+  if (Object.keys(updates).length === 0) {
+    return findById(id);
+  }
+  updates.updatedAt = new Date().toISOString();
+  const result = await collection().findOneAndUpdate(
+    { id },
+    { $set: updates },
+    { returnDocument: "after" }
+  );
+  return result.value;
 }
 
-function softDelete(id) {
-  const product = findById(id);
-  if (!product) return null;
+async function softDelete(id) {
   const when = new Date().toISOString();
-  product.deletedAt = when;
-  product.active = false;
-  product.updatedAt = when;
-  commit();
-  return { id: product.id, deletedAt: when };
+  const result = await collection().findOneAndUpdate(
+    { id },
+    {
+      $set: {
+        deletedAt: when,
+        active: false,
+        updatedAt: when,
+      },
+    },
+    { returnDocument: "after", projection: { id: 1, deletedAt: 1 } }
+  );
+  return result.value;
+}
+
+async function listActive({ q = "", skip = 0, limit = 20 } = {}) {
+  const filter = { deletedAt: null };
+  if (q) {
+    filter.$or = [
+      { name: { $regex: q, $options: "i" } },
+      { sku: { $regex: q, $options: "i" } },
+    ];
+  }
+  const cursor = collection()
+    .find(filter)
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit);
+  const [items, total] = await Promise.all([
+    cursor.toArray(),
+    collection().countDocuments(filter),
+  ]);
+  return { items, total };
+}
+
+async function findActive() {
+  return collection()
+    .find({ deletedAt: null, active: true })
+    .project({ id: 1, name: 1, sku: 1, priceCents: 1 })
+    .toArray();
+}
+
+async function findByIds(ids = []) {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return [];
+  }
+  return collection()
+    .find({ id: { $in: ids } })
+    .toArray();
 }
 
 module.exports = {
@@ -56,5 +111,7 @@ module.exports = {
   create,
   update,
   softDelete,
+  listActive,
+  findActive,
+  findByIds,
 };
-

@@ -1,6 +1,7 @@
 const { httpError } = require("../utils/error");
 const Orders = require("../models/orders.model");
-const { db } = require("../db/memory");
+const Customers = require("../models/customers.model");
+const Products = require("../models/products.model");
 const {
   createOrder,
   updateOrder,
@@ -8,28 +9,31 @@ const {
   OrdersServiceError,
 } = require("../services/orders.service");
 
-function findOrderById(id) {
+async function findOrderById(id) {
   return Orders.findById(id);
 }
 
-function embedOrder(order, includeList) {
+async function embedOrder(order, includeList) {
   const result = { ...order, items: order.items.map((it) => ({ ...it })) };
   if (includeList.includes("customer")) {
-    const customer = db.customers.find((c) => c.id === order.customerId);
+    const customer = await Customers.findById(order.customerId);
     if (customer) result.customer = customer;
   }
   if (includeList.includes("items.product")) {
-    result.items = result.items.map((it) => {
-      const product = db.products.find((p) => p.id === it.productId);
-      return { ...it, product: product || null };
-    });
+    const ids = [...new Set(result.items.map((it) => it.productId))];
+    const products = await Products.findByIds(ids);
+    const map = new Map(products.map((p) => [p.id, p]));
+    result.items = result.items.map((it) => ({
+      ...it,
+      product: map.get(it.productId) || null,
+    }));
   }
   return result;
 }
 
 async function create(req, res) {
   try {
-    const order = createOrder(req.body || {});
+    const order = await createOrder(req.body || {});
     return res.status(201).json(order);
   } catch (err) {
     if (err instanceof OrdersServiceError) {
@@ -49,19 +53,14 @@ async function list(req, res) {
     const status = (req.query.status || "").toString().trim();
     const include = (req.query.include || "").toString();
     const includeList = include ? include.split(",").map((s) => s.trim()) : [];
-
-    let items = db.orders.slice();
-    if (status) items = items.filter((o) => o.status === status);
-
-    const total = items.length;
-    const start = (page - 1) * limit;
-    const end = start + limit;
-    const pageItems = items.slice(start, end).map((o) => embedOrder(o, includeList));
-
+    const skip = (page - 1) * limit;
+    const filter = status ? { status } : {};
+    const { items, total } = await Orders.list({ filter, skip, limit, sort: { createdAt: -1 } });
+    const embedded = await Promise.all(items.map((o) => embedOrder(o, includeList)));
     res.set("X-Total-Count", String(total));
     res.set("X-Page", String(page));
     res.set("X-Limit", String(limit));
-    return res.status(200).json(pageItems);
+    return res.status(200).json(embedded);
   } catch (err) {
     return httpError(res, 500, "INTERNAL_ERROR");
   }
@@ -71,11 +70,12 @@ async function getById(req, res) {
   try {
     const id = parseInt(req.params.id, 10);
     if (!Number.isFinite(id)) return httpError(res, 404, "Order no encontrado");
-    const order = findOrderById(id);
+    const order = await findOrderById(id);
     if (!order) return httpError(res, 404, "Order no encontrado");
     const include = (req.query.include || "").toString();
     const includeList = include ? include.split(",").map((s) => s.trim()) : [];
-    return res.status(200).json(embedOrder(order, includeList));
+    const payload = await embedOrder(order, includeList);
+    return res.status(200).json(payload);
   } catch (err) {
     return httpError(res, 500, "INTERNAL_ERROR");
   }
@@ -85,7 +85,7 @@ async function patch(req, res) {
   try {
     const id = parseInt(req.params.id, 10);
     if (!Number.isFinite(id)) return httpError(res, 404, "Order no encontrado");
-    const updated = updateOrder(id, req.body || {});
+    const updated = await updateOrder(id, req.body || {});
     return res.status(200).json(updated);
   } catch (err) {
     if (err instanceof OrdersServiceError) {
@@ -101,7 +101,7 @@ async function patch(req, res) {
 async function remove(req, res) {
   try {
     const id = parseInt(req.params.id, 10);
-    const payload = cancelOrder(id);
+    const payload = await cancelOrder(id);
     return res.status(200).json(payload);
   } catch (err) {
     if (err instanceof OrdersServiceError) {

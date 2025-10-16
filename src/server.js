@@ -1,5 +1,7 @@
+require("dotenv").config();
 const express = require("express");
 const path = require("path");
+const { connect } = require("./db/mongo");
 
 const app = express();
 
@@ -32,8 +34,19 @@ app.use((err, req, res, next) => {
   return res.status(500).json({ message: "INTERNAL_ERROR" });
 });
 
-const PORT = 3000;
-app.listen(PORT, () => {
-  console.log(`API on http://localhost:${PORT}`);
-  console.log(`\n*********************************\n      LOGIFLOW  GRUPO 14\n*********************************\n`);
+async function start() {
+  const uri = process.env.MONGODB_URI;
+  const dbName = process.env.MONGODB_DB;
+  await connect({ uri, dbName });
+
+  const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
+  app.listen(PORT, () => {
+    console.log(`API on http://localhost:${PORT}`);
+    console.log(`\n*********************************\n      LOGIFLOW  GRUPO 14\n*********************************\n`);
+  });
+}
+
+start().catch((err) => {
+  console.error("Failed to initialize application", err);
+  process.exit(1);
 });

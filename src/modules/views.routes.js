@@ -1,9 +1,9 @@
 const express = require("express");
-const { db } = require("../db/memory");
 const Customers = require("../models/customers.model");
 const Products = require("../models/products.model");
 const Warehouses = require("../models/warehouses.model");
 const Stock = require("../models/stock.model");
+const OrdersModel = require("../models/orders.model");
 const {
   createOrder,
   updateOrder,
@@ -22,6 +22,7 @@ const {
   InvoicesServiceError,
 } = require("../services/invoices.service");
 const { validateCustomerPayload, isNonEmptyString } = require("../utils/validate");
+const { getCollection } = require("../db/mongo");
 
 const router = express.Router();
 //(*)
@@ -66,6 +67,19 @@ function translateStatus(kind, code) {
   };
   const map = maps[kind] || {};
   return map[code] || code;
+}
+
+async function loadState() {
+  const [customers, products, warehouses, stock, orders, shipments, invoices] = await Promise.all([
+    getCollection("customers").find().toArray(),
+    getCollection("products").find().toArray(),
+    getCollection("warehouses").find().toArray(),
+    getCollection("stock").find().toArray(),
+    getCollection("orders").find().toArray(),
+    getCollection("shipments").find().toArray(),
+    getCollection("invoices").find().toArray(),
+  ]);
+  return { customers, products, warehouses, stock, orders, shipments, invoices };
 }
 
 const SUCCESS_MESSAGES = {
@@ -146,8 +160,9 @@ function projectCustomers(list) {
     }));
 }
 
-function renderCustomersPage(req, res, overrides = {}) {
-  const customers = projectCustomers(db.customers);
+async function renderCustomersPage(req, res, overrides = {}) {
+  const state = overrides.state || (await loadState());
+  const customers = projectCustomers(state.customers);
   const flash = overrides.flashMessages ? normalizeFlash(overrides.flashMessages) : flashFromQuery(req);
   const createValues = {
     name: overrides.createValues?.name ?? "",
@@ -186,14 +201,14 @@ function renderCustomersPage(req, res, overrides = {}) {
 }
 
 // Orders helpers
-function buildOrderOptions() {
-  const customers = db.customers
+function buildOrderOptions(state) {
+  const customers = state.customers
     .filter((c) => c.deletedAt === null && c.status === "active")
     .map((c) => ({ id: c.id, name: c.name }));
-  const warehouses = db.warehouses
+  const warehouses = state.warehouses
     .filter((w) => w.deletedAt === null)
     .map((w) => ({ id: w.id, name: w.name }));
-  const products = db.products
+  const products = state.products
     .filter((p) => p.deletedAt === null && p.active === true)
     .map((p) => ({
       id: p.id,
@@ -205,13 +220,13 @@ function buildOrderOptions() {
   return { customers, warehouses, products };
 }
 
-function ensureProductsForItems(orderOptions, items) {
+function ensureProductsForItems(state, orderOptions, items) {
   if (!items || !Array.isArray(items)) return;
   const existing = new Map(orderOptions.products.map((p) => [Number(p.id), p]));
   for (const item of items) {
     const id = Number(item.productId);
     if (!Number.isFinite(id) || id <= 0 || existing.has(id)) continue;
-    const product = db.products.find((p) => p.id === id) || null;
+    const product = state.products.find((p) => p.id === id) || null;
     const label = product
       ? `${product.sku} - ${product.name} (inactivo)`
       : `Producto #${id}`;
@@ -226,13 +241,13 @@ function ensureProductsForItems(orderOptions, items) {
   }
 }
 
-function buildStockOptions() {
-  const warehouses = db.warehouses
+function buildStockOptions(state) {
+  const warehouses = state.warehouses
     .filter((w) => w.deletedAt === null)
     .map((w) => ({ id: w.id, name: w.name }));
   warehouses.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
-  const products = db.products
+  const products = state.products
     .filter((p) => p.deletedAt === null && p.active === true)
     .map((p) => ({ id: p.id, sku: p.sku, name: p.name, label: `${p.sku} - ${p.name}` }));
   products.sort((a, b) => (a.label || "").localeCompare(b.label || ""));
@@ -240,7 +255,7 @@ function buildStockOptions() {
   return { warehouses, products };
 }
 
-function ensureStockProducts(options, stockItems) {
+function ensureStockProducts(state, options, stockItems) {
   const existing = new Map(options.products.map((p) => [Number(p.id), p]));
   for (const item of stockItems) {
     const id = Number(item.productId);
@@ -256,10 +271,10 @@ function ensureStockProducts(options, stockItems) {
   options.products.sort((a, b) => (a.label || "").localeCompare(b.label || ""));
 }
 
-function projectStockRecords() {
-  const join = db.stock.map((s) => {
-    const w = db.warehouses.find((x) => x.id === s.warehouseId) || {};
-    const p = db.products.find((x) => x.id === s.productId) || {};
+function projectStockRecords(state) {
+  const join = state.stock.map((s) => {
+    const w = state.warehouses.find((x) => x.id === s.warehouseId) || {};
+    const p = state.products.find((x) => x.id === s.productId) || {};
     return {
       id: s.id,
       warehouseId: s.warehouseId,
@@ -278,10 +293,11 @@ function projectStockRecords() {
   return join;
 }
 
-function renderStockPage(req, res, overrides = {}) {
-  const stock = projectStockRecords();
-  const stockOptions = buildStockOptions();
-  ensureStockProducts(stockOptions, stock);
+async function renderStockPage(req, res, overrides = {}) {
+  const state = overrides.state || (await loadState());
+  const stock = projectStockRecords(state);
+  const stockOptions = buildStockOptions(state);
+  ensureStockProducts(state, stockOptions, stock);
   const flash = overrides.flashMessages ? normalizeFlash(overrides.flashMessages) : flashFromQuery(req);
 
   const adjustValues = {
@@ -322,12 +338,12 @@ function nextShipmentStatuses(current) {
   return SHIPMENT_TRANSITIONS[current] || [];
 }
 
-function projectShipments(list, tz) {
+function projectShipments(state, list, tz) {
   return list.map((s) => {
-    const order = db.orders.find((o) => o.id === s.orderId) || null;
-    const customer = order ? db.customers.find((c) => c.id === order.customerId) || null : null;
+    const order = state.orders.find((o) => o.id === s.orderId) || null;
+    const customer = order ? state.customers.find((c) => c.id === order.customerId) || null : null;
     const warehouseId = s.origin?.warehouseId ?? (order ? order.warehouseId : null);
-    const warehouse = warehouseId ? db.warehouses.find((w) => w.id === warehouseId) || null : null;
+    const warehouse = warehouseId ? state.warehouses.find((w) => w.id === warehouseId) || null : null;
     const nextStatusesCodes = nextShipmentStatuses(s.status);
     return {
       id: s.id,
@@ -350,12 +366,12 @@ function projectShipments(list, tz) {
   });
 }
 
-function buildShipmentOptions() {
-  const orders = db.orders
+function buildShipmentOptions(state) {
+  const orders = state.orders
     .filter((o) => o.status === "allocated")
     .map((o) => {
-      const customer = db.customers.find((c) => c.id === o.customerId) || null;
-      const warehouse = db.warehouses.find((w) => w.id === o.warehouseId) || null;
+      const customer = state.customers.find((c) => c.id === o.customerId) || null;
+      const warehouse = state.warehouses.find((w) => w.id === o.warehouseId) || null;
       const customerName = customer ? customer.name : "";
       const warehouseName = warehouse ? warehouse.name : "";
       return {
@@ -367,10 +383,11 @@ function buildShipmentOptions() {
   return { orders };
 }
 
-function renderShipmentsPage(req, res, overrides = {}) {
+async function renderShipmentsPage(req, res, overrides = {}) {
+  const state = overrides.state || (await loadState());
   const tz = getTz(req);
-  const shipments = projectShipments(db.shipments, tz);
-  const shipmentOptions = buildShipmentOptions();
+  const shipments = projectShipments(state, state.shipments, tz);
+  const shipmentOptions = buildShipmentOptions(state);
   const flash = overrides.flashMessages ? normalizeFlash(overrides.flashMessages) : flashFromQuery(req);
 
   const createValues = {
@@ -404,9 +421,9 @@ function nextInvoiceStatuses(current) {
   return INVOICE_TRANSITIONS[current] || [];
 }
 
-function projectInvoices(list, tz) {
+function projectInvoices(state, list, tz) {
   return list.map((i) => {
-    const customer = db.customers.find((c) => c.id === i.customerId) || null;
+    const customer = state.customers.find((c) => c.id === i.customerId) || null;
     const nextStatusesCodes = nextInvoiceStatuses(i.status);
     return {
       id: i.id,
@@ -422,12 +439,12 @@ function projectInvoices(list, tz) {
   });
 }
 
-function buildInvoiceOptions() {
-  const eligibleOrders = db.orders
+function buildInvoiceOptions(state) {
+  const eligibleOrders = state.orders
     .filter((o) => o.status === "delivered")
-    .filter((o) => !db.invoices.some((inv) => inv.orderId === o.id))
+    .filter((o) => !state.invoices.some((inv) => inv.orderId === o.id))
     .map((o) => {
-      const customer = db.customers.find((c) => c.id === o.customerId) || null;
+      const customer = state.customers.find((c) => c.id === o.customerId) || null;
       return {
         id: o.id,
         label: `Pedido #${o.id} - ${customer ? customer.name : "sin cliente"}`,
@@ -437,10 +454,11 @@ function buildInvoiceOptions() {
   return { orders: eligibleOrders };
 }
 
-function renderInvoicesPage(req, res, overrides = {}) {
+async function renderInvoicesPage(req, res, overrides = {}) {
+  const state = overrides.state || (await loadState());
   const tz = getTz(req);
-  const invoices = projectInvoices(db.invoices, tz);
-  const invoiceOptions = buildInvoiceOptions();
+  const invoices = projectInvoices(state, state.invoices, tz);
+  const invoiceOptions = buildInvoiceOptions(state);
   const flash = overrides.flashMessages ? normalizeFlash(overrides.flashMessages) : flashFromQuery(req);
 
   const createValues = {
@@ -459,12 +477,12 @@ function renderInvoicesPage(req, res, overrides = {}) {
   });
 }
 
-function projectOrders(list, tz) {
+function projectOrders(state, list, tz) {
   return list.map((o) => {
-    const customer = db.customers.find((c) => c.id === o.customerId) || null;
-    const warehouse = db.warehouses.find((w) => w.id === o.warehouseId) || null;
+    const customer = state.customers.find((c) => c.id === o.customerId) || null;
+    const warehouse = state.warehouses.find((w) => w.id === o.warehouseId) || null;
     const items = o.items.map((it) => {
-      const product = db.products.find((p) => p.id === it.productId) || null;
+      const product = state.products.find((p) => p.id === it.productId) || null;
       return {
         productId: it.productId,
         qty: it.qty,
@@ -516,11 +534,11 @@ function padOrderItems(items, minRows = 3) {
   return rows;
 }
 
-function findOrderForEdit(id) {
-  const order = db.orders.find((o) => o.id === id);
+function findOrderForEdit(state, id) {
+  const order = state.orders.find((o) => o.id === id);
   if (!order) return null;
-  const customer = db.customers.find((c) => c.id === order.customerId) || null;
-  const warehouse = db.warehouses.find((w) => w.id === order.warehouseId) || null;
+  const customer = state.customers.find((c) => c.id === order.customerId) || null;
+  const warehouse = state.warehouses.find((w) => w.id === order.warehouseId) || null;
   return {
     id: order.id,
     status: order.status,
@@ -535,10 +553,11 @@ function findOrderForEdit(id) {
   };
 }
 
-function renderOrdersPage(req, res, overrides = {}) {
+async function renderOrdersPage(req, res, overrides = {}) {
+  const state = overrides.state || (await loadState());
   const tz = getTz(req);
-  const orders = projectOrders(db.orders, tz);
-  const orderOptions = buildOrderOptions();
+  const orders = projectOrders(state, state.orders, tz);
+  const orderOptions = buildOrderOptions(state);
   const flash = overrides.flashMessages ? normalizeFlash(overrides.flashMessages) : flashFromQuery(req);
 
   const createValues = {
@@ -557,7 +576,7 @@ function renderOrdersPage(req, res, overrides = {}) {
     const editParam = req.query.edit;
     const editId = editParam ? Number(editParam) : NaN;
     if (Number.isFinite(editId)) {
-      const found = findOrderForEdit(editId);
+      const found = findOrderForEdit(state, editId);
       if (found) {
         if (found.status !== "allocated") {
           flash.error.push("Solo se pueden modificar pedidos en estado 'reservado'.");
@@ -571,9 +590,9 @@ function renderOrdersPage(req, res, overrides = {}) {
   }
 
   if (editOrder) {
-    ensureProductsForItems(orderOptions, editOrder.items);
+    ensureProductsForItems(state, orderOptions, editOrder.items);
   }
-  ensureProductsForItems(orderOptions, createItems);
+  ensureProductsForItems(state, orderOptions, createItems);
 
   res.locals.flashMessages = flash;
   return res.render("orders/index", {
@@ -662,8 +681,9 @@ function projectProducts(list) {
     }));
 }
 
-function renderProductsPage(req, res, overrides = {}) {
-  const products = projectProducts(db.products);
+async function renderProductsPage(req, res, overrides = {}) {
+  const state = overrides.state || (await loadState());
+  const products = projectProducts(state.products);
   const flash = overrides.flashMessages ? normalizeFlash(overrides.flashMessages) : flashFromQuery(req);
   const createValues = {
     sku: overrides.createValues?.sku ?? "",
@@ -705,19 +725,20 @@ function renderProductsPage(req, res, overrides = {}) {
   });
 }
 
-function projectWarehouses(list) {
-  return list
+function projectWarehouses(state) {
+  return state.warehouses
     .filter((w) => w.deletedAt === null)
     .map((w) => ({
       id: w.id,
       name: w.name,
       city: w.city,
-      itemsEnStock: db.stock.filter((s) => s.warehouseId === w.id).length,
+      itemsEnStock: state.stock.filter((s) => s.warehouseId === w.id).length,
     }));
 }
 
-function renderWarehousesPage(req, res, overrides = {}) {
-  const warehouses = projectWarehouses(db.warehouses);
+async function renderWarehousesPage(req, res, overrides = {}) {
+  const state = overrides.state || (await loadState());
+  const warehouses = projectWarehouses(state);
   const flash = overrides.flashMessages ? normalizeFlash(overrides.flashMessages) : flashFromQuery(req);
   const createValues = {
     name: overrides.createValues?.name ?? "",
@@ -753,51 +774,54 @@ function renderWarehousesPage(req, res, overrides = {}) {
 }
 
 // Indice de vistas
-router.get("/", (req, res) => {
+router.get("/", async (req, res) => {
+  const state = await loadState();
   const counts = {
-    customers: db.customers.filter((c) => c.deletedAt === null).length,
-    products: db.products.filter((p) => p.deletedAt === null).length,
-    warehouses: db.warehouses.filter((w) => w.deletedAt === null).length,
-    stock: db.stock.length,
-    orders: db.orders.length,
-    shipments: db.shipments.length,
-    invoices: db.invoices.length,
+    customers: state.customers.filter((c) => c.deletedAt === null).length,
+    products: state.products.filter((p) => p.deletedAt === null).length,
+    warehouses: state.warehouses.filter((w) => w.deletedAt === null).length,
+    stock: state.stock.length,
+    orders: state.orders.length,
+    shipments: state.shipments.length,
+    invoices: state.invoices.length,
   };
   res.locals.flashMessages = flashFromQuery(req);
   return res.render("index", { counts });
 });
 
 // Clientes
-router.get("/customers", (req, res) => {
-  return renderCustomersPage(req, res);
+router.get("/customers", async (req, res) => {
+  await renderCustomersPage(req, res);
 });
 
-router.post("/customers", (req, res) => {
+router.post("/customers", async (req, res) => {
+  const state = await loadState();
   const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
   const email = typeof req.body.email === "string" ? req.body.email.trim() : "";
   const payload = { name, email };
   const errors = validateCustomerPayload(payload);
-  if (Customers.isEmailTaken(email)) {
+  if (await Customers.isEmailTaken(email)) {
     errors.push("email ya existe");
   }
   if (errors.length) {
     return renderCustomersPage(req, res, {
+      state,
       createValues: payload,
       createErrors: errors,
       flashMessages: { error: [FORM_ERROR_MESSAGE] },
       editCustomer: null,
     });
   }
-  Customers.create(payload);
+  await Customers.create(payload);
   return res.redirect("/views/customers?success=customer_created");
 });
 
-router.post("/customers/:id/update", (req, res) => {
+router.post("/customers/:id/update", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     return res.redirect("/views/customers?error=customer_not_found");
   }
-  const customer = Customers.findById(id);
+  const customer = await Customers.findById(id);
   if (!customer || customer.deletedAt !== null) {
     return res.redirect("/views/customers?error=customer_not_found");
   }
@@ -810,12 +834,14 @@ router.post("/customers/:id/update", (req, res) => {
   if (!isNonEmptyString(name)) errors.push("name requerido");
   if (!isNonEmptyString(email)) errors.push("email requerido");
   if (!["active", "blocked"].includes(status)) errors.push("status invalido");
-  if (email !== customer.email && Customers.isEmailTaken(email, id)) {
+  if (email !== customer.email && (await Customers.isEmailTaken(email, id))) {
     errors.push("email ya existe");
   }
 
   if (errors.length) {
+    const state = await loadState();
     return renderCustomersPage(req, res, {
+      state,
       editCustomer: { id, name, email, status: status || customer.status },
       editErrors: errors,
       flashMessages: { error: [FORM_ERROR_MESSAGE] },
@@ -823,35 +849,34 @@ router.post("/customers/:id/update", (req, res) => {
     });
   }
 
-  Customers.update(id, { name, email, status });
+  await Customers.update(id, { name, email, status });
   return res.redirect("/views/customers?success=customer_updated");
 });
 
-router.post("/customers/:id/delete", (req, res) => {
+router.post("/customers/:id/delete", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     return res.redirect("/views/customers?error=customer_not_found");
   }
-  const customer = Customers.findById(id);
+  const customer = await Customers.findById(id);
   if (!customer || customer.deletedAt !== null) {
     return res.redirect("/views/customers?error=customer_not_found");
   }
-  const hasActiveOrders = db.orders.some(
-    (o) => o.customerId === id && o.status !== "cancelled" && o.status !== "delivered"
-  );
+  const hasActiveOrders = await OrdersModel.hasActiveOrders(id);
   if (hasActiveOrders) {
     return res.redirect("/views/customers?error=customer_has_active_orders");
   }
-  Customers.softDelete(id);
+  await Customers.softDelete(id);
   return res.redirect("/views/customers?success=customer_deleted");
 });
 
 // Pedidos
-router.get("/orders", (req, res) => {
-  return renderOrdersPage(req, res);
+router.get("/orders", async (req, res) => {
+  await renderOrdersPage(req, res);
 });
 
-router.post("/orders", (req, res) => {
+router.post("/orders", async (req, res) => {
+  const state = await loadState();
   const customerId = typeof req.body.customerId === "string" ? req.body.customerId.trim() : "";
   const warehouseId = typeof req.body.warehouseId === "string" ? req.body.warehouseId.trim() : "";
   const rawItems = extractOrderFormItems(req.body.items);
@@ -863,12 +888,13 @@ router.post("/orders", (req, res) => {
   };
 
   try {
-    createOrder(payload);
+    await createOrder(payload);
     return res.redirect("/views/orders?success=order_created");
   } catch (err) {
     if (err instanceof OrdersServiceError) {
       const errors = err.code === "VALIDATION_ERROR" ? err.details || [] : [err.message || FORM_ERROR_MESSAGE];
       return renderOrdersPage(req, res, {
+        state,
         createValues: { customerId, warehouseId },
         createItems: rawItems,
         createErrors: errors,
@@ -876,6 +902,7 @@ router.post("/orders", (req, res) => {
       });
     }
     return renderOrdersPage(req, res, {
+      state,
       createValues: { customerId, warehouseId },
       createItems: rawItems,
       createErrors: ["Ocurrio un error inesperado."],
@@ -884,7 +911,7 @@ router.post("/orders", (req, res) => {
   }
 });
 
-router.post("/orders/:id/update", (req, res) => {
+router.post("/orders/:id/update", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     return res.redirect("/views/orders?error=order_not_found");
@@ -894,11 +921,12 @@ router.post("/orders/:id/update", (req, res) => {
   const payload = { items: filteredItems.map((it) => ({ productId: it.productId, qty: it.qty })) };
 
   try {
-    updateOrder(id, payload);
+    await updateOrder(id, payload);
     return res.redirect("/views/orders?success=order_updated");
   } catch (err) {
     if (err instanceof OrdersServiceError) {
-      const baseOrder = findOrderForEdit(id);
+      const state = await loadState();
+      const baseOrder = findOrderForEdit(state, id);
       if (!baseOrder) {
         return res.redirect("/views/orders?error=order_not_found");
       }
@@ -909,6 +937,7 @@ router.post("/orders/:id/update", (req, res) => {
       const errors = err.code === "VALIDATION_ERROR" ? err.details || [] : [err.message || FORM_ERROR_MESSAGE];
       const flashMessages = err.code === "VALIDATION_ERROR" ? { error: [FORM_ERROR_MESSAGE] } : { error: [err.message || FORM_ERROR_MESSAGE] };
       return renderOrdersPage(req, res, {
+        state,
         editOrder,
         editErrors: errors,
         flashMessages,
@@ -918,13 +947,13 @@ router.post("/orders/:id/update", (req, res) => {
   }
 });
 
-router.post("/orders/:id/cancel", (req, res) => {
+router.post("/orders/:id/cancel", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     return res.redirect("/views/orders?error=order_not_found");
   }
   try {
-    cancelOrder(id);
+    await cancelOrder(id);
     return res.redirect("/views/orders?success=order_cancelled");
   } catch (err) {
     if (err instanceof OrdersServiceError) {
@@ -936,11 +965,11 @@ router.post("/orders/:id/cancel", (req, res) => {
 });
 
 // Productos
-router.get("/products", (req, res) => {
-  return renderProductsPage(req, res);
+router.get("/products", async (req, res) => {
+  await renderProductsPage(req, res);
 });
 
-router.post("/products", (req, res) => {
+router.post("/products", async (req, res) => {
   const sku = typeof req.body.sku === "string" ? req.body.sku.trim() : "";
   const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
   const priceInput = typeof req.body.price === "string" ? req.body.price.trim() : "";
@@ -950,10 +979,12 @@ router.post("/products", (req, res) => {
   if (!isNonEmptyString(sku)) errors.push("sku requerido");
   if (!isNonEmptyString(name)) errors.push("name requerido");
   if (!Number.isInteger(priceCents) || priceCents <= 0) errors.push("precio debe ser mayor a 0");
-  if (sku && Products.isSkuTaken(sku)) errors.push("sku ya existe");
+  if (sku && (await Products.isSkuTaken(sku))) errors.push("sku ya existe");
 
   if (errors.length) {
+    const state = await loadState();
     return renderProductsPage(req, res, {
+      state,
       createValues: { sku, name, price: priceInput },
       createErrors: errors,
       flashMessages: { error: [FORM_ERROR_MESSAGE] },
@@ -961,16 +992,16 @@ router.post("/products", (req, res) => {
     });
   }
 
-  Products.create({ sku, name, priceCents });
+  await Products.create({ sku, name, priceCents });
   return res.redirect("/views/products?success=product_created");
 });
 
-router.post("/products/:id/update", (req, res) => {
+router.post("/products/:id/update", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     return res.redirect("/views/products?error=product_not_found");
   }
-  const product = Products.findById(id);
+  const product = await Products.findById(id);
   if (!product || product.deletedAt !== null) {
     return res.redirect("/views/products?error=product_not_found");
   }
@@ -989,7 +1020,9 @@ router.post("/products/:id/update", (req, res) => {
   if (!["true", "false"].includes(activeRaw)) errors.push("estado invalido");
 
   if (errors.length) {
+    const state = await loadState();
     return renderProductsPage(req, res, {
+      state,
       editProduct: {
         id,
         sku: product.sku,
@@ -1003,33 +1036,34 @@ router.post("/products/:id/update", (req, res) => {
     });
   }
 
-  Products.update(id, { name, priceCents, active });
+  await Products.update(id, { name, priceCents, active });
   return res.redirect("/views/products?success=product_updated");
 });
 
-router.post("/products/:id/delete", (req, res) => {
+router.post("/products/:id/delete", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     return res.redirect("/views/products?error=product_not_found");
   }
-  const product = Products.findById(id);
+  const product = await Products.findById(id);
   if (!product || product.deletedAt !== null) {
     return res.redirect("/views/products?error=product_not_found");
   }
-  const hasStock = db.stock.some((s) => s.productId === id && s.qty > 0);
+  const stockRecords = await Stock.list({ productId: id });
+  const hasStock = stockRecords.some((s) => s.qty > 0);
   if (hasStock) {
     return res.redirect("/views/products?error=product_has_stock");
   }
-  Products.softDelete(id);
+  await Products.softDelete(id);
   return res.redirect("/views/products?success=product_deleted");
 });
 
 // Depositos
-router.get("/warehouses", (req, res) => {
-  return renderWarehousesPage(req, res);
+router.get("/warehouses", async (req, res) => {
+  await renderWarehousesPage(req, res);
 });
 
-router.post("/warehouses", (req, res) => {
+router.post("/warehouses", async (req, res) => {
   const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
   const city = typeof req.body.city === "string" ? req.body.city.trim() : "";
 
@@ -1038,7 +1072,9 @@ router.post("/warehouses", (req, res) => {
   if (!isNonEmptyString(city)) errors.push("city requerido");
 
   if (errors.length) {
+    const state = await loadState();
     return renderWarehousesPage(req, res, {
+      state,
       createValues: { name, city },
       createErrors: errors,
       flashMessages: { error: [FORM_ERROR_MESSAGE] },
@@ -1046,16 +1082,16 @@ router.post("/warehouses", (req, res) => {
     });
   }
 
-  Warehouses.create({ name, city });
+  await Warehouses.create({ name, city });
   return res.redirect("/views/warehouses?success=warehouse_created");
 });
 
-router.post("/warehouses/:id/update", (req, res) => {
+router.post("/warehouses/:id/update", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     return res.redirect("/views/warehouses?error=warehouse_not_found");
   }
-  const warehouse = Warehouses.findById(id);
+  const warehouse = await Warehouses.findById(id);
   if (!warehouse || warehouse.deletedAt !== null) {
     return res.redirect("/views/warehouses?error=warehouse_not_found");
   }
@@ -1068,41 +1104,44 @@ router.post("/warehouses/:id/update", (req, res) => {
   if (!isNonEmptyString(city)) errors.push("city requerido");
 
   if (errors.length) {
+    const state = await loadState();
     return renderWarehousesPage(req, res, {
-      editWarehouse: { id, name, city, itemsEnStock: db.stock.filter((s) => s.warehouseId === id).length },
+      state,
+      editWarehouse: { id, name, city, itemsEnStock: state.stock.filter((s) => s.warehouseId === id).length },
       editErrors: errors,
       flashMessages: { error: [FORM_ERROR_MESSAGE] },
       createValues: { name: "", city: "" },
     });
   }
 
-  Warehouses.update(id, { name, city });
+  await Warehouses.update(id, { name, city });
   return res.redirect("/views/warehouses?success=warehouse_updated");
 });
 
-router.post("/warehouses/:id/delete", (req, res) => {
+router.post("/warehouses/:id/delete", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     return res.redirect("/views/warehouses?error=warehouse_not_found");
   }
-  const warehouse = Warehouses.findById(id);
+  const warehouse = await Warehouses.findById(id);
   if (!warehouse || warehouse.deletedAt !== null) {
     return res.redirect("/views/warehouses?error=warehouse_not_found");
   }
-  const hasStock = db.stock.some((s) => s.warehouseId === id && s.qty > 0);
+  const stockRecords = await Stock.list({ warehouseId: id });
+  const hasStock = stockRecords.some((s) => s.qty > 0);
   if (hasStock) {
     return res.redirect("/views/warehouses?error=warehouse_has_stock");
   }
-  Warehouses.softDelete(id);
+  await Warehouses.softDelete(id);
   return res.redirect("/views/warehouses?success=warehouse_deleted");
 });
 
 // Envios
-router.get("/shipments", (req, res) => {
-  return renderShipmentsPage(req, res);
+router.get("/shipments", async (req, res) => {
+  await renderShipmentsPage(req, res);
 });
 
-router.post("/shipments", (req, res) => {
+router.post("/shipments", async (req, res) => {
   const orderId = typeof req.body.orderId === "string" ? req.body.orderId.trim() : "";
   const destinationAddress = typeof req.body.destinationAddress === "string" ? req.body.destinationAddress.trim() : "";
   const destinationLat = typeof req.body.destinationLat === "string" ? req.body.destinationLat.trim() : "";
@@ -1125,12 +1164,14 @@ router.post("/shipments", (req, res) => {
   if (destinationLng) payload.destination.lng = destinationLng;
 
   try {
-    createShipment(payload);
+    await createShipment(payload);
     return res.redirect("/views/shipments?success=shipment_created");
   } catch (err) {
     if (err instanceof ShipmentsServiceError) {
       const errors = err.code === "VALIDATION_ERROR" ? err.details || [] : [err.message || FORM_ERROR_MESSAGE];
+      const state = await loadState();
       return renderShipmentsPage(req, res, {
+        state,
         createValues,
         createErrors: errors,
         flashMessages: { error: [FORM_ERROR_MESSAGE] },
@@ -1140,7 +1181,7 @@ router.post("/shipments", (req, res) => {
   }
 });
 
-router.post("/shipments/:id/status", (req, res) => {
+router.post("/shipments/:id/status", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     return res.redirect("/views/shipments?error=shipment_not_found");
@@ -1152,7 +1193,7 @@ router.post("/shipments/:id/status", (req, res) => {
   if (note) statusPayload.note = note;
 
   try {
-    updateShipmentStatus(id, statusPayload);
+    await updateShipmentStatus(id, statusPayload);
     return res.redirect("/views/shipments?success=shipment_status_updated");
   } catch (err) {
     if (err instanceof ShipmentsServiceError) {
@@ -1163,7 +1204,9 @@ router.post("/shipments/:id/status", (req, res) => {
         inlineErrors.push(err.message || FORM_ERROR_MESSAGE);
       }
       if (inlineErrors.length) {
+        const state = await loadState();
         return renderShipmentsPage(req, res, {
+          state,
           statusErrors: { [id]: inlineErrors },
           flashMessages: { error: [FORM_ERROR_MESSAGE] },
         });
@@ -1175,13 +1218,13 @@ router.post("/shipments/:id/status", (req, res) => {
   }
 });
 
-router.post("/shipments/:id/cancel", (req, res) => {
+router.post("/shipments/:id/cancel", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     return res.redirect("/views/shipments?error=shipment_not_found");
   }
   try {
-    cancelShipment(id);
+    await cancelShipment(id);
     return res.redirect("/views/shipments?success=shipment_cancelled");
   } catch (err) {
     if (err instanceof ShipmentsServiceError) {
@@ -1193,21 +1236,33 @@ router.post("/shipments/:id/cancel", (req, res) => {
 });
 
 // Facturas
-router.get("/invoices", (req, res) => {
-  return renderInvoicesPage(req, res);
+router.get("/invoices", async (req, res) => {
+  await renderInvoicesPage(req, res);
 });
 
-router.post("/invoices", (req, res) => {
+router.post("/invoices", async (req, res) => {
   const orderId = typeof req.body.orderId === "string" ? req.body.orderId.trim() : "";
   const createValues = { orderId };
 
+  const state = await loadState();
+
+  if (!orderId) {
+    return renderInvoicesPage(req, res, {
+      state,
+      createValues,
+      createErrors: ["orderId requerido"],
+      flashMessages: { error: [FORM_ERROR_MESSAGE] },
+    });
+  }
+
   try {
-    createInvoice({ orderId });
+    await createInvoice({ orderId });
     return res.redirect("/views/invoices?success=invoice_created");
   } catch (err) {
     if (err instanceof InvoicesServiceError) {
       const errors = err.code === "VALIDATION_ERROR" ? err.details || [] : [err.message || FORM_ERROR_MESSAGE];
       return renderInvoicesPage(req, res, {
+        state,
         createValues,
         createErrors: errors,
         flashMessages: { error: [FORM_ERROR_MESSAGE] },
@@ -1217,15 +1272,24 @@ router.post("/invoices", (req, res) => {
   }
 });
 
-router.post("/invoices/:id/status", (req, res) => {
+router.post("/invoices/:id/status", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     return res.redirect("/views/invoices?error=invoice_not_found");
   }
   const status = typeof req.body.status === "string" ? req.body.status.trim() : "";
 
+  if (!status) {
+    const state = await loadState();
+    return renderInvoicesPage(req, res, {
+      state,
+      statusErrors: { [id]: ["status requerido"] },
+      flashMessages: { error: [FORM_ERROR_MESSAGE] },
+    });
+  }
+
   try {
-    updateInvoiceStatus(id, { status });
+    await updateInvoiceStatus(id, { status });
     return res.redirect("/views/invoices?success=invoice_status_updated");
   } catch (err) {
     if (err instanceof InvoicesServiceError) {
@@ -1236,7 +1300,9 @@ router.post("/invoices/:id/status", (req, res) => {
         inlineErrors.push(err.message || FORM_ERROR_MESSAGE);
       }
       if (inlineErrors.length) {
+        const state = await loadState();
         return renderInvoicesPage(req, res, {
+          state,
           statusErrors: { [id]: inlineErrors },
           flashMessages: { error: [FORM_ERROR_MESSAGE] },
         });
@@ -1249,11 +1315,11 @@ router.post("/invoices/:id/status", (req, res) => {
 });
 
 // Stock
-router.get("/stock", (req, res) => {
-  return renderStockPage(req, res);
+router.get("/stock", async (req, res) => {
+  await renderStockPage(req, res);
 });
 
-router.post("/stock/adjust", (req, res) => {
+router.post("/stock/adjust", async (req, res) => {
   const warehouseIdRaw = typeof req.body.warehouseId === "string" ? req.body.warehouseId.trim() : "";
   const productIdRaw = typeof req.body.productId === "string" ? req.body.productId.trim() : "";
   const deltaRaw = typeof req.body.delta === "string" ? req.body.delta.trim() : "";
@@ -1268,8 +1334,19 @@ router.post("/stock/adjust", (req, res) => {
   const delta = Number(deltaRaw);
   if (!Number.isFinite(delta) || delta === 0) errors.push("delta debe ser distinto de cero");
 
+  const state = await loadState();
+  const warehouse = Number.isInteger(warehouseId)
+    ? state.warehouses.find((w) => w.id === warehouseId && w.deletedAt === null)
+    : null;
+  if (!warehouse) errors.push("Deposito no encontrado");
+  const product = Number.isInteger(productId)
+    ? state.products.find((p) => p.id === productId && p.deletedAt === null)
+    : null;
+  if (!product) errors.push("Producto no encontrado");
+
   if (errors.length) {
     return renderStockPage(req, res, {
+      state,
       adjustValues,
       adjustErrors: errors,
       moveValues: { fromWarehouseId: "", toWarehouseId: "", productId: "", qty: "" },
@@ -1277,26 +1354,14 @@ router.post("/stock/adjust", (req, res) => {
     });
   }
 
-  const warehouse = db.warehouses.find((w) => w.id === warehouseId && w.deletedAt === null);
-  if (!warehouse) errors.push("Deposito no encontrado");
-  const product = db.products.find((p) => p.id === productId && p.deletedAt === null);
-  if (!product) errors.push("Producto no encontrado");
-
-  if (errors.length) {
-    return renderStockPage(req, res, {
-      adjustValues,
-      adjustErrors: errors,
-      flashMessages: { error: [FORM_ERROR_MESSAGE] },
-    });
-  }
-
   try {
-    Stock.adjust(warehouseId, productId, delta);
+    await Stock.adjust(warehouseId, productId, delta);
     return res.redirect("/views/stock?success=stock_adjusted");
   } catch (err) {
     const key = mapStockErrorToQuery(err && err.code ? err.code : err && err.message === "stock insuficiente" ? "STOCK_INSUFFICIENT" : "");
     if (err && err.message === "stock insuficiente") {
       return renderStockPage(req, res, {
+        state,
         adjustValues,
         adjustErrors: ["stock insuficiente"],
         flashMessages: { error: [FORM_ERROR_MESSAGE] },
@@ -1306,7 +1371,7 @@ router.post("/stock/adjust", (req, res) => {
   }
 });
 
-router.post("/stock/move", (req, res) => {
+router.post("/stock/move", async (req, res) => {
   const fromRaw = typeof req.body.fromWarehouseId === "string" ? req.body.fromWarehouseId.trim() : "";
   const toRaw = typeof req.body.toWarehouseId === "string" ? req.body.toWarehouseId.trim() : "";
   const productIdRaw = typeof req.body.productId === "string" ? req.body.productId.trim() : "";
@@ -1327,8 +1392,23 @@ router.post("/stock/move", (req, res) => {
     errors.push("Los depositos deben ser distintos");
   }
 
+  const state = await loadState();
+  const fromWarehouse = Number.isInteger(fromWarehouseId)
+    ? state.warehouses.find((w) => w.id === fromWarehouseId && w.deletedAt === null)
+    : null;
+  if (!fromWarehouse) errors.push("Deposito origen no encontrado");
+  const toWarehouse = Number.isInteger(toWarehouseId)
+    ? state.warehouses.find((w) => w.id === toWarehouseId && w.deletedAt === null)
+    : null;
+  if (!toWarehouse) errors.push("Deposito destino no encontrado");
+  const product = Number.isInteger(productId)
+    ? state.products.find((p) => p.id === productId && p.deletedAt === null)
+    : null;
+  if (!product) errors.push("Producto no encontrado");
+
   if (errors.length) {
     return renderStockPage(req, res, {
+      state,
       moveValues,
       moveErrors: errors,
       adjustValues: { warehouseId: "", productId: "", delta: "" },
@@ -1336,33 +1416,19 @@ router.post("/stock/move", (req, res) => {
     });
   }
 
-  const fromWarehouse = db.warehouses.find((w) => w.id === fromWarehouseId && w.deletedAt === null);
-  if (!fromWarehouse) errors.push("Deposito origen no encontrado");
-  const toWarehouse = db.warehouses.find((w) => w.id === toWarehouseId && w.deletedAt === null);
-  if (!toWarehouse) errors.push("Deposito destino no encontrado");
-  const product = db.products.find((p) => p.id === productId && p.deletedAt === null);
-  if (!product) errors.push("Producto no encontrado");
-
-  if (errors.length) {
-    return renderStockPage(req, res, {
-      moveValues,
-      moveErrors: errors,
-      flashMessages: { error: [FORM_ERROR_MESSAGE] },
-    });
-  }
-
   try {
-    Stock.move(fromWarehouseId, toWarehouseId, productId, qty);
+    await Stock.move(fromWarehouseId, toWarehouseId, productId, qty);
     return res.redirect("/views/stock?success=stock_moved");
   } catch (err) {
+    const key = mapStockErrorToQuery(err && err.code ? err.code : err && err.message === "stock insuficiente" ? "STOCK_INSUFFICIENT" : "");
     if (err && err.message === "stock insuficiente") {
       return renderStockPage(req, res, {
+        state,
         moveValues,
         moveErrors: ["stock insuficiente"],
         flashMessages: { error: [FORM_ERROR_MESSAGE] },
       });
     }
-    const key = mapStockErrorToQuery(err && err.code ? err.code : "");
     return res.redirect(`/views/stock?error=${key}`);
   }
 });

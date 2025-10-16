@@ -1,20 +1,29 @@
-const { db, nextId, commit } = require("../db/memory");
+const { getCollection, getNextSequence } = require("../db/mongo");
 
-function findById(id) {
-  return db.customers.find((c) => c.id === id);
+function collection() {
+  return getCollection("customers");
 }
 
-function isEmailTaken(email, excludeId = null) {
-  const target = email;
-  return db.customers.some(
-    (c) => c.deletedAt === null && c.email === target && (excludeId == null || c.id !== excludeId)
-  );
+async function findById(id) {
+  return collection().findOne({ id });
 }
 
-function create({ name, email }) {
+async function isEmailTaken(email, excludeId = null) {
+  const filter = {
+    email,
+    deletedAt: null,
+  };
+  if (excludeId != null) {
+    filter.id = { $ne: excludeId };
+  }
+  const existing = await collection().findOne(filter);
+  return Boolean(existing);
+}
+
+async function create({ name, email }) {
   const now = new Date().toISOString();
   const customer = {
-    id: nextId("customers"),
+    id: await getNextSequence("customers"),
     name,
     email,
     status: "active",
@@ -22,31 +31,66 @@ function create({ name, email }) {
     updatedAt: now,
     deletedAt: null,
   };
-  db.customers.push(customer);
-  commit();
+  await collection().insertOne(customer);
   return customer;
 }
 
-function update(id, fields) {
-  const customer = findById(id);
-  if (!customer) return null;
-  if (fields.name !== undefined) customer.name = fields.name;
-  if (fields.email !== undefined) customer.email = fields.email;
-  if (fields.status !== undefined) customer.status = fields.status;
-  customer.updatedAt = new Date().toISOString();
-  commit();
-  return customer;
+async function update(id, fields) {
+  const updates = {};
+  if (fields.name !== undefined) updates.name = fields.name;
+  if (fields.email !== undefined) updates.email = fields.email;
+  if (fields.status !== undefined) updates.status = fields.status;
+  if (Object.keys(updates).length === 0) {
+    const current = await findById(id);
+    return current;
+  }
+  updates.updatedAt = new Date().toISOString();
+  const result = await collection().findOneAndUpdate(
+    { id },
+    { $set: updates },
+    { returnDocument: "after" }
+  );
+  return result.value;
 }
 
-function softDelete(id) {
-  const customer = findById(id);
-  if (!customer) return null;
+async function softDelete(id) {
   const when = new Date().toISOString();
-  customer.deletedAt = when;
-  customer.status = "blocked";
-  customer.updatedAt = when;
-  commit();
-  return { id: customer.id, deletedAt: when };
+  const result = await collection().findOneAndUpdate(
+    { id },
+    {
+      $set: {
+        deletedAt: when,
+        status: "blocked",
+        updatedAt: when,
+      },
+    },
+    { returnDocument: "after", projection: { id: 1, deletedAt: 1 } }
+  );
+  return result.value;
+}
+
+async function listActive({ q = "", skip = 0, limit = 20 } = {}) {
+  const filter = { deletedAt: null };
+  if (q) {
+    filter.name = { $regex: q, $options: "i" };
+  }
+  const cursor = collection()
+    .find(filter)
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit);
+  const [items, total] = await Promise.all([
+    cursor.toArray(),
+    collection().countDocuments(filter),
+  ]);
+  return { items, total };
+}
+
+async function findActive() {
+  return collection()
+    .find({ deletedAt: null })
+    .project({ id: 1, name: 1, email: 1, status: 1 })
+    .toArray();
 }
 
 module.exports = {
@@ -55,5 +99,6 @@ module.exports = {
   create,
   update,
   softDelete,
+  listActive,
+  findActive,
 };
-

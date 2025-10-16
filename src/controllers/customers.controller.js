@@ -1,7 +1,7 @@
 const { httpError } = require("../utils/error");
 const { isNonEmptyString, validateCustomerPayload } = require("../utils/validate");
 const Customers = require("../models/customers.model");
-const { db } = require("../db/memory");
+const Orders = require("../models/orders.model");
 
 async function create(req, res) {
   try {
@@ -10,10 +10,10 @@ async function create(req, res) {
       return httpError(res, 400, "VALIDATION_ERROR", { details: errors });
     }
     const { name, email } = req.body;
-    if (Customers.isEmailTaken(email)) {
+    if (await Customers.isEmailTaken(email)) {
       return httpError(res, 409, "email ya existe");
     }
-    const customer = Customers.create({ name, email });
+    const customer = await Customers.create({ name, email });
     return res.status(201).json(customer);
   } catch (err) {
     return httpError(res, 500, "INTERNAL_ERROR");
@@ -25,19 +25,12 @@ async function list(req, res) {
     const page = Math.max(parseInt(req.query.page || "1", 10) || 1, 1);
     const limit = Math.max(parseInt(req.query.limit || "20", 10) || 20, 1);
     const q = (req.query.q || "").toString().trim().toLowerCase();
-
-    let items = db.customers.filter((c) => c.deletedAt === null);
-    if (q) items = items.filter((c) => c.name.toLowerCase().includes(q));
-
-    const total = items.length;
-    const start = (page - 1) * limit;
-    const end = start + limit;
-    const pageItems = items.slice(start, end);
-
+    const skip = (page - 1) * limit;
+    const { items, total } = await Customers.listActive({ q, skip, limit });
     res.set("X-Total-Count", String(total));
     res.set("X-Page", String(page));
     res.set("X-Limit", String(limit));
-    return res.status(200).json(pageItems);
+    return res.status(200).json(items);
   } catch (err) {
     return httpError(res, 500, "INTERNAL_ERROR");
   }
@@ -49,7 +42,7 @@ async function getById(req, res) {
     if (!Number.isFinite(id)) {
       return httpError(res, 404, "Customer no encontrado");
     }
-    const customer = Customers.findById(id);
+    const customer = await Customers.findById(id);
     if (!customer || customer.deletedAt !== null) {
       return httpError(res, 404, "Customer no encontrado");
     }
@@ -57,7 +50,7 @@ async function getById(req, res) {
     const includeList = include ? include.split(",").map((s) => s.trim()) : [];
     const result = { ...customer };
     if (includeList.includes("orders")) {
-      result.orders = db.orders.filter((o) => o.customerId === id);
+      result.orders = await Orders.findByCustomerId(id);
     }
     return res.status(200).json(result);
   } catch (err) {
@@ -71,7 +64,7 @@ async function patch(req, res) {
     if (!Number.isFinite(id)) {
       return httpError(res, 404, "Customer no encontrado");
     }
-    const customer = Customers.findById(id);
+    const customer = await Customers.findById(id);
     if (!customer || customer.deletedAt !== null) {
       return httpError(res, 404, "Customer no encontrado");
     }
@@ -86,12 +79,12 @@ async function patch(req, res) {
     }
 
     if (email !== undefined && email !== customer.email) {
-      if (Customers.isEmailTaken(email, id)) {
+      if (await Customers.isEmailTaken(email, id)) {
         return httpError(res, 409, "email ya existe");
       }
     }
 
-    const updated = Customers.update(id, { name, email, status });
+    const updated = await Customers.update(id, { name, email, status });
     return res.status(200).json(updated);
   } catch (err) {
     return httpError(res, 500, "INTERNAL_ERROR");
@@ -104,17 +97,15 @@ async function remove(req, res) {
     if (!Number.isFinite(id)) {
       return httpError(res, 404, "Customer no encontrado");
     }
-    const customer = Customers.findById(id);
+    const customer = await Customers.findById(id);
     if (!customer || customer.deletedAt !== null) {
       return httpError(res, 404, "Customer no encontrado");
     }
-    const hasActiveOrders = db.orders.some(
-      (o) => o.customerId === id && o.status !== "cancelled" && o.status !== "delivered"
-    );
+    const hasActiveOrders = await Orders.hasActiveOrders(id);
     if (hasActiveOrders) {
       return httpError(res, 409, "Cliente con pedidos activos");
     }
-    const payload = Customers.softDelete(id);
+    const payload = await Customers.softDelete(id);
     return res.status(200).json(payload);
   } catch (err) {
     return httpError(res, 500, "INTERNAL_ERROR");

@@ -1,42 +1,83 @@
-const { db, nextId, commit } = require("../db/memory");
+const { getCollection, getNextSequence } = require("../db/mongo");
 
-function findById(id) {
-  return db.warehouses.find((w) => w.id === id);
+function collection() {
+  return getCollection("warehouses");
 }
 
-function create({ name, city }) {
+async function findById(id) {
+  return collection().findOne({ id });
+}
+
+async function create({ name, city }) {
   const now = new Date().toISOString();
   const warehouse = {
-    id: nextId("warehouses"),
+    id: await getNextSequence("warehouses"),
     name,
     city,
     createdAt: now,
     updatedAt: now,
     deletedAt: null,
   };
-  db.warehouses.push(warehouse);
-  commit();
+  await collection().insertOne(warehouse);
   return warehouse;
 }
 
-function update(id, fields) {
-  const warehouse = findById(id);
-  if (!warehouse) return null;
-  if (fields.name !== undefined) warehouse.name = fields.name;
-  if (fields.city !== undefined) warehouse.city = fields.city;
-  warehouse.updatedAt = new Date().toISOString();
-  commit();
-  return warehouse;
+async function update(id, fields) {
+  const updates = {};
+  if (fields.name !== undefined) updates.name = fields.name;
+  if (fields.city !== undefined) updates.city = fields.city;
+  if (Object.keys(updates).length === 0) {
+    return findById(id);
+  }
+  updates.updatedAt = new Date().toISOString();
+  const result = await collection().findOneAndUpdate(
+    { id },
+    { $set: updates },
+    { returnDocument: "after" }
+  );
+  return result.value;
 }
 
-function softDelete(id) {
-  const warehouse = findById(id);
-  if (!warehouse) return null;
+async function softDelete(id) {
   const when = new Date().toISOString();
-  warehouse.deletedAt = when;
-  warehouse.updatedAt = when;
-  commit();
-  return { id: warehouse.id, deletedAt: when };
+  const result = await collection().findOneAndUpdate(
+    { id },
+    {
+      $set: {
+        deletedAt: when,
+        updatedAt: when,
+      },
+    },
+    { returnDocument: "after", projection: { id: 1, deletedAt: 1 } }
+  );
+  return result.value;
+}
+
+async function listActive({ q = "", skip = 0, limit = 20 } = {}) {
+  const filter = { deletedAt: null };
+  if (q) {
+    filter.$or = [
+      { name: { $regex: q, $options: "i" } },
+      { city: { $regex: q, $options: "i" } },
+    ];
+  }
+  const cursor = collection()
+    .find(filter)
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit);
+  const [items, total] = await Promise.all([
+    cursor.toArray(),
+    collection().countDocuments(filter),
+  ]);
+  return { items, total };
+}
+
+async function findActive() {
+  return collection()
+    .find({ deletedAt: null })
+    .project({ id: 1, name: 1, city: 1 })
+    .toArray();
 }
 
 module.exports = {
@@ -44,5 +85,6 @@ module.exports = {
   create,
   update,
   softDelete,
+  listActive,
+  findActive,
 };
-

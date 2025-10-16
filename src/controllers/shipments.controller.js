@@ -1,6 +1,7 @@
 const { httpError } = require("../utils/error");
-const { db } = require("../db/memory");
 const Shipments = require("../models/shipments.model");
+const Orders = require("../models/orders.model");
+const Customers = require("../models/customers.model");
 const {
   createShipment,
   updateShipmentStatus,
@@ -8,16 +9,16 @@ const {
   ShipmentsServiceError,
 } = require("../services/shipments.service");
 
-function embedShipment(shipment, includeList) {
+async function embedShipment(shipment, includeList) {
   const result = { ...shipment, tracking: shipment.tracking ? shipment.tracking.slice() : [] };
   if (includeList.includes("order")) {
-    const order = db.orders.find((o) => o.id === shipment.orderId);
+    const order = await Orders.findById(shipment.orderId);
     if (order) result.order = order;
   }
   if (includeList.includes("customer")) {
-    const order = db.orders.find((o) => o.id === shipment.orderId);
+    const order = result.order || (await Orders.findById(shipment.orderId));
     if (order) {
-      const customer = db.customers.find((c) => c.id === order.customerId);
+      const customer = await Customers.findById(order.customerId);
       if (customer) result.customer = customer;
     }
   }
@@ -26,7 +27,7 @@ function embedShipment(shipment, includeList) {
 
 async function create(req, res) {
   try {
-    const shipment = createShipment(req.body || {});
+    const shipment = await createShipment(req.body || {});
     return res.status(201).json(shipment);
   } catch (err) {
     if (err instanceof ShipmentsServiceError) {
@@ -46,19 +47,14 @@ async function list(req, res) {
     const status = (req.query.status || "").toString().trim();
     const include = (req.query.include || "").toString();
     const includeList = include ? include.split(",").map((s) => s.trim()) : [];
-
-    let items = db.shipments.slice();
-    if (status) items = items.filter((s) => s.status === status);
-
-    const total = items.length;
-    const start = (page - 1) * limit;
-    const end = start + limit;
-    const pageItems = items.slice(start, end).map((s) => embedShipment(s, includeList));
-
+    const skip = (page - 1) * limit;
+    const filter = status ? { status } : {};
+    const { items, total } = await Shipments.list({ filter, skip, limit, sort: { createdAt: -1 } });
+    const embedded = await Promise.all(items.map((s) => embedShipment(s, includeList)));
     res.set("X-Total-Count", String(total));
     res.set("X-Page", String(page));
     res.set("X-Limit", String(limit));
-    return res.status(200).json(pageItems);
+    return res.status(200).json(embedded);
   } catch (err) {
     return httpError(res, 500, "INTERNAL_ERROR");
   }
@@ -68,11 +64,12 @@ async function getById(req, res) {
   try {
     const id = parseInt(req.params.id, 10);
     if (!Number.isFinite(id)) return httpError(res, 404, "Shipment no encontrado");
-    const shipment = Shipments.findById(id);
+    const shipment = await Shipments.findById(id);
     if (!shipment) return httpError(res, 404, "Shipment no encontrado");
     const include = (req.query.include || "").toString();
     const includeList = include ? include.split(",").map((s) => s.trim()) : [];
-    return res.status(200).json(embedShipment(shipment, includeList));
+    const payload = await embedShipment(shipment, includeList);
+    return res.status(200).json(payload);
   } catch (err) {
     return httpError(res, 500, "INTERNAL_ERROR");
   }
@@ -82,7 +79,7 @@ async function patchStatus(req, res) {
   try {
     const id = parseInt(req.params.id, 10);
     if (!Number.isFinite(id)) return httpError(res, 404, "Shipment no encontrado");
-    const shipment = updateShipmentStatus(id, req.body || {});
+    const shipment = await updateShipmentStatus(id, req.body || {});
     return res.status(200).json(shipment);
   } catch (err) {
     if (err instanceof ShipmentsServiceError) {
@@ -98,7 +95,7 @@ async function patchStatus(req, res) {
 async function remove(req, res) {
   try {
     const id = parseInt(req.params.id, 10);
-    const payload = cancelShipment(id);
+    const payload = await cancelShipment(id);
     return res.status(200).json(payload);
   } catch (err) {
     if (err instanceof ShipmentsServiceError) {

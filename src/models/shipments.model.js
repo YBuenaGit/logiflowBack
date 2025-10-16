@@ -1,13 +1,17 @@
-const { db, nextId, commit } = require("../db/memory");
+const { getCollection, getNextSequence } = require("../db/mongo");
 
-function findById(id) {
-  return db.shipments.find((s) => s.id === id);
+function collection() {
+  return getCollection("shipments");
 }
 
-function create({ orderId, originWarehouseId, destination }) {
+async function findById(id) {
+  return collection().findOne({ id });
+}
+
+async function create({ orderId, originWarehouseId, destination }) {
   const now = new Date().toISOString();
   const shipment = {
-    id: nextId("shipments"),
+    id: await getNextSequence("shipments"),
     orderId,
     status: "created",
     origin: { warehouseId: originWarehouseId },
@@ -16,29 +20,57 @@ function create({ orderId, originWarehouseId, destination }) {
     createdAt: now,
     updatedAt: now,
   };
-  db.shipments.push(shipment);
-  commit();
+  await collection().insertOne(shipment);
   return shipment;
 }
 
-function setStatusAndTrack(shipment, nextStatus, note) {
+async function setStatusAndTrack(shipment, nextStatus, note) {
   const now = new Date().toISOString();
-  shipment.status = nextStatus;
   const entry = { ts: now, status: nextStatus };
-  if (note) entry.note = String(note);
-  shipment.tracking.push(entry);
-  shipment.updatedAt = now;
-  commit();
-  return shipment;
+  if (note) {
+    entry.note = String(note);
+  }
+  const result = await collection().findOneAndUpdate(
+    { id: shipment.id },
+    {
+      $set: {
+        status: nextStatus,
+        updatedAt: now,
+      },
+      $push: { tracking: entry },
+    },
+    { returnDocument: "after" }
+  );
+  return result.value;
 }
 
-function cancel(shipment) {
+async function cancel(shipment) {
   const now = new Date().toISOString();
-  shipment.status = "cancelled";
-  shipment.tracking.push({ ts: now, status: "cancelled" });
-  shipment.updatedAt = now;
-  commit();
-  return shipment;
+  const result = await collection().findOneAndUpdate(
+    { id: shipment.id },
+    {
+      $set: {
+        status: "cancelled",
+        updatedAt: now,
+      },
+      $push: { tracking: { ts: now, status: "cancelled" } },
+    },
+    { returnDocument: "after" }
+  );
+  return result.value;
+}
+
+async function list({ filter = {}, skip = 0, limit = 20, sort = { createdAt: -1 } } = {}) {
+  const cursor = collection()
+    .find(filter)
+    .sort(sort)
+    .skip(skip)
+    .limit(limit);
+  const [items, total] = await Promise.all([
+    cursor.toArray(),
+    collection().countDocuments(filter),
+  ]);
+  return { items, total };
 }
 
 module.exports = {
@@ -46,5 +78,5 @@ module.exports = {
   create,
   setStatusAndTrack,
   cancel,
+  list,
 };
-

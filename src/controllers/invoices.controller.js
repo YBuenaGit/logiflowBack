@@ -1,6 +1,7 @@
 const { httpError } = require("../utils/error");
-const { db } = require("../db/memory");
 const Invoices = require("../models/invoices.model");
+const Orders = require("../models/orders.model");
+const Customers = require("../models/customers.model");
 const {
   createInvoice,
   updateInvoiceStatus,
@@ -9,7 +10,7 @@ const {
 
 async function create(req, res) {
   try {
-    const invoice = createInvoice(req.body || {});
+    const invoice = await createInvoice(req.body || {});
     return res.status(201).json(invoice);
   } catch (err) {
     if (err instanceof InvoicesServiceError) {
@@ -30,31 +31,29 @@ async function list(req, res) {
     const customerId = req.query.customerId ? parseInt(req.query.customerId, 10) : null;
     const include = (req.query.include || "").toString();
     const includeList = include ? include.split(",").map((s) => s.trim()) : [];
-
-    let items = db.invoices.slice();
-    if (status) items = items.filter((i) => i.status === status);
-    if (Number.isFinite(customerId)) items = items.filter((i) => i.customerId === customerId);
-
-    const total = items.length;
-    const start = (page - 1) * limit;
-    const end = start + limit;
-    const pageItems = items.slice(start, end).map((i) => {
-      const result = { ...i };
-      if (includeList.includes("order")) {
-        const order = db.orders.find((o) => o.id === i.orderId);
-        if (order) result.order = order;
-      }
-      if (includeList.includes("customer")) {
-        const customer = db.customers.find((c) => c.id === i.customerId);
-        if (customer) result.customer = customer;
-      }
-      return result;
-    });
-
+    const filter = {};
+    if (status) filter.status = status;
+    if (Number.isFinite(customerId)) filter.customerId = customerId;
+    const skip = (page - 1) * limit;
+    const { items, total } = await Invoices.list({ filter, skip, limit, sort: { createdAt: -1 } });
+    const enriched = await Promise.all(
+      items.map(async (invoice) => {
+        const result = { ...invoice };
+        if (includeList.includes("order")) {
+          const order = await Orders.findById(invoice.orderId);
+          if (order) result.order = order;
+        }
+        if (includeList.includes("customer")) {
+          const customer = await Customers.findById(invoice.customerId);
+          if (customer) result.customer = customer;
+        }
+        return result;
+      })
+    );
     res.set("X-Total-Count", String(total));
     res.set("X-Page", String(page));
     res.set("X-Limit", String(limit));
-    return res.status(200).json(pageItems);
+    return res.status(200).json(enriched);
   } catch (err) {
     return httpError(res, 500, "INTERNAL_ERROR");
   }
@@ -64,17 +63,17 @@ async function getById(req, res) {
   try {
     const id = parseInt(req.params.id, 10);
     if (!Number.isFinite(id)) return httpError(res, 404, "Invoice no encontrado");
-    const invoice = Invoices.findById(id);
+    const invoice = await Invoices.findById(id);
     if (!invoice) return httpError(res, 404, "Invoice no encontrado");
     const include = (req.query.include || "").toString();
     const includeList = include ? include.split(",").map((s) => s.trim()) : [];
     const result = { ...invoice };
     if (includeList.includes("order")) {
-      const order = db.orders.find((o) => o.id === invoice.orderId);
+      const order = await Orders.findById(invoice.orderId);
       if (order) result.order = order;
     }
     if (includeList.includes("customer")) {
-      const customer = db.customers.find((c) => c.id === invoice.customerId);
+      const customer = await Customers.findById(invoice.customerId);
       if (customer) result.customer = customer;
     }
     return res.status(200).json(result);
@@ -87,7 +86,7 @@ async function patch(req, res) {
   try {
     const id = parseInt(req.params.id, 10);
     if (!Number.isFinite(id)) return httpError(res, 404, "Invoice no encontrado");
-    const invoice = updateInvoiceStatus(id, req.body || {});
+    const invoice = await updateInvoiceStatus(id, req.body || {});
     return res.status(200).json(invoice);
   } catch (err) {
     if (err instanceof InvoicesServiceError) {

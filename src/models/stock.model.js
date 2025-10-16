@@ -1,53 +1,82 @@
-const { db, nextId, commit } = require("../db/memory");
+const { getCollection, getNextSequence } = require("../db/mongo");
 
-function findRecord(warehouseId, productId) {
-  return db.stock.find((s) => s.warehouseId === warehouseId && s.productId === productId);
+function collection() {
+  return getCollection("stock");
 }
 
-function getOrCreate(warehouseId, productId) {
-  let rec = findRecord(warehouseId, productId);
-  if (!rec) {
-    rec = { id: nextId("stock"), warehouseId, productId, qty: 0 };
-    db.stock.push(rec);
-    commit(); // mutation: new stock record
+async function findRecord(warehouseId, productId) {
+  return collection().findOne({ warehouseId, productId });
+}
+
+async function getOrCreate(warehouseId, productId) {
+  const existing = await findRecord(warehouseId, productId);
+  if (existing) {
+    return existing;
   }
-  return rec;
+
+  const record = {
+    id: await getNextSequence("stock"),
+    warehouseId,
+    productId,
+    qty: 0,
+  };
+
+  try {
+    await collection().insertOne(record);
+    return record;
+  } catch (err) {
+    if (err && err.code === 11000) {
+      return findRecord(warehouseId, productId);
+    }
+    throw err;
+  }
 }
 
-function adjust(warehouseId, productId, delta) {
-  const rec = getOrCreate(warehouseId, productId);
-  const newQty = rec.qty + delta;
-  if (newQty < 0) {
+async function adjust(warehouseId, productId, delta) {
+  await getOrCreate(warehouseId, productId);
+  const filter = { warehouseId, productId };
+  if (delta < 0) {
+    filter.qty = { $gte: Math.abs(delta) };
+  }
+  const result = await collection().findOneAndUpdate(
+    filter,
+    { $inc: { qty: delta } },
+    { returnDocument: "after" }
+  );
+  if (!result.value) {
     const err = new Error("stock insuficiente");
     err.code = "STOCK_INSUFFICIENT";
     throw err;
   }
-  rec.qty = newQty;
-  commit(); // mutation: qty change
-  return rec;
+  return result.value;
 }
 
-function move(fromWarehouseId, toWarehouseId, productId, qty) {
-  const fromRec = getOrCreate(fromWarehouseId, productId);
-  const toRec = getOrCreate(toWarehouseId, productId);
-  if (fromRec.qty < qty) {
-    const err = new Error("stock insuficiente");
-    err.code = "STOCK_INSUFFICIENT";
+async function move(fromWarehouseId, toWarehouseId, productId, qty) {
+  if (qty <= 0) {
+    const err = new Error("qty invalido");
+    err.code = "INVALID_QTY";
     throw err;
   }
-  fromRec.qty -= qty;
-  commit(); // mutation: from decremented
-  toRec.qty += qty;
-  commit(); // mutation: to incremented
-  return { from: fromRec, to: toRec };
+
+  const from = await adjust(fromWarehouseId, productId, -qty);
+  try {
+    const to = await adjust(toWarehouseId, productId, qty);
+    return { from, to };
+  } catch (err) {
+    await adjust(fromWarehouseId, productId, qty);
+    throw err;
+  }
 }
 
-function list(filter = {}) {
-  const { warehouseId = null, productId = null } = filter;
-  let items = db.stock.slice();
-  if (Number.isFinite(warehouseId)) items = items.filter((s) => s.warehouseId === warehouseId);
-  if (Number.isFinite(productId)) items = items.filter((s) => s.productId === productId);
-  return items;
+async function list(filter = {}) {
+  const query = {};
+  if (Number.isFinite(filter.warehouseId)) {
+    query.warehouseId = filter.warehouseId;
+  }
+  if (Number.isFinite(filter.productId)) {
+    query.productId = filter.productId;
+  }
+  return collection().find(query).toArray();
 }
 
 module.exports = {
@@ -57,4 +86,3 @@ module.exports = {
   move,
   list,
 };
-

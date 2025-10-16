@@ -1,5 +1,5 @@
-const { db } = require("../db/memory");
 const Invoices = require("../models/invoices.model");
+const Orders = require("../models/orders.model");
 const {
   validateCreateInvoice,
   validateInvoiceStatusTransition,
@@ -20,11 +20,11 @@ function parseId(value) {
   return Number.isFinite(num) ? num : NaN;
 }
 
-function findOrderById(id) {
-  return db.orders.find((o) => o.id === id);
+async function findOrderById(id) {
+  return Orders.findById(id);
 }
 
-function findInvoiceById(id) {
+async function findInvoiceById(id) {
   return Invoices.findById(id);
 }
 
@@ -37,7 +37,7 @@ function ensureOrderDeliverable(order) {
   }
 }
 
-function createInvoice(payload = {}) {
+async function createInvoice(payload = {}) {
   const errors = validateCreateInvoice(payload);
   if (errors.length) {
     throw new InvoicesServiceError(400, "VALIDATION_ERROR", "VALIDATION_ERROR", errors);
@@ -47,17 +47,17 @@ function createInvoice(payload = {}) {
   if (!Number.isFinite(orderId)) {
     throw new InvoicesServiceError(404, "ORDER_NOT_FOUND", "Order no encontrado");
   }
-  const order = findOrderById(orderId);
+  const order = await findOrderById(orderId);
   ensureOrderDeliverable(order);
 
-  const exists = db.invoices.some((i) => i.orderId === orderId);
+  const exists = await Invoices.findByOrderId(orderId);
   if (exists) {
     throw new InvoicesServiceError(409, "ORDER_ALREADY_INVOICED", "Order ya tiene invoice");
   }
 
   const shippingFeeCents = 2000 + Math.round(order.totalCents * 0.1);
   const amountCents = order.totalCents + shippingFeeCents;
-  const invoice = Invoices.create({
+  const invoice = await Invoices.create({
     orderId,
     customerId: order.customerId,
     amountCents,
@@ -65,12 +65,12 @@ function createInvoice(payload = {}) {
   return invoice;
 }
 
-function updateInvoiceStatus(idValue, payload = {}) {
+async function updateInvoiceStatus(idValue, payload = {}) {
   const id = parseId(idValue);
   if (!Number.isFinite(id)) {
     throw new InvoicesServiceError(404, "INVOICE_NOT_FOUND", "Invoice no encontrado");
   }
-  const invoice = findInvoiceById(id);
+  const invoice = await findInvoiceById(id);
   if (!invoice) {
     throw new InvoicesServiceError(404, "INVOICE_NOT_FOUND", "Invoice no encontrado");
   }
@@ -81,8 +81,8 @@ function updateInvoiceStatus(idValue, payload = {}) {
   if (!validateInvoiceStatusTransition(invoice.status, nextStatus)) {
     throw new InvoicesServiceError(400, "TRANSITION_NOT_ALLOWED", "TRANSITION_NOT_ALLOWED");
   }
-  Invoices.setStatus(invoice, nextStatus);
-  return invoice;
+  const updated = await Invoices.setStatus(invoice, nextStatus);
+  return updated;
 }
 
 module.exports = {

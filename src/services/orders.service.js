@@ -1,6 +1,8 @@
-const { db } = require("../db/memory");
 const Orders = require("../models/orders.model");
 const Stock = require("../models/stock.model");
+const Customers = require("../models/customers.model");
+const Warehouses = require("../models/warehouses.model");
+const Products = require("../models/products.model");
 const {
   validateCreateOrder,
   validateUpdateOrder,
@@ -21,29 +23,42 @@ function parseId(value) {
   return Number.isFinite(num) ? num : NaN;
 }
 
-function findCustomerByIdActive(id) {
-  return db.customers.find((c) => c.id === id && c.deletedAt === null && c.status === "active");
+async function findCustomerByIdActive(id) {
+  const customer = await Customers.findById(id);
+  if (customer && customer.deletedAt === null && customer.status === "active") {
+    return customer;
+  }
+  return null;
 }
 
-function findWarehouseByIdActive(id) {
-  return db.warehouses.find((w) => w.id === id && w.deletedAt === null);
+async function findWarehouseByIdActive(id) {
+  const warehouse = await Warehouses.findById(id);
+  if (warehouse && warehouse.deletedAt === null) {
+    return warehouse;
+  }
+  return null;
 }
 
-function findProductByIdActive(id) {
-  return db.products.find((p) => p.id === id && p.deletedAt === null && p.active === true);
+async function findProductByIdActive(id) {
+  const product = await Products.findById(id);
+  if (product && product.deletedAt === null && product.active === true) {
+    return product;
+  }
+  return null;
 }
 
-function findOrderById(id) {
+async function findOrderById(id) {
   return Orders.findById(id);
 }
 
-function calcTotalCents(items) {
-  let total = 0;
-  for (const it of items) {
-    const product = db.products.find((p) => p.id === it.productId);
-    if (product) total += Number(it.qty) * Number(product.priceCents);
-  }
-  return total;
+async function calcTotalCents(items) {
+  const productIds = [...new Set(items.map((it) => it.productId))];
+  const products = await Products.findByIds(productIds);
+  const priceMap = new Map(products.map((p) => [p.id, Number(p.priceCents)]));
+  return items.reduce((acc, it) => {
+    const price = priceMap.get(it.productId) || 0;
+    return acc + Number(it.qty) * price;
+  }, 0);
 }
 
 function normalizeItems(rawItems) {
@@ -71,7 +86,7 @@ function assertOrderIsAllocated(order, message = "order no modificable") {
   }
 }
 
-function createOrder(payload = {}) {
+async function createOrder(payload = {}) {
   const errors = validateCreateOrder(payload);
   if (errors.length) {
     throw new OrdersServiceError(400, "VALIDATION_ERROR", "VALIDATION_ERROR", errors);
@@ -84,21 +99,21 @@ function createOrder(payload = {}) {
     throw new OrdersServiceError(400, "VALIDATION_ERROR", "VALIDATION_ERROR", ["items invalidos"]);
   }
 
-  const customer = findCustomerByIdActive(customerId);
+  const customer = await findCustomerByIdActive(customerId);
   if (!customer) {
     throw new OrdersServiceError(404, "CUSTOMER_NOT_FOUND", "Customer no encontrado o inactivo");
   }
-  const warehouse = findWarehouseByIdActive(warehouseId);
+  const warehouse = await findWarehouseByIdActive(warehouseId);
   if (!warehouse) {
     throw new OrdersServiceError(404, "WAREHOUSE_NOT_FOUND", "Warehouse no encontrado");
   }
 
   for (const it of items) {
-    const product = findProductByIdActive(it.productId);
+    const product = await findProductByIdActive(it.productId);
     if (!product) {
       throw new OrdersServiceError(404, "PRODUCT_NOT_FOUND", "Producto no encontrado o inactivo");
     }
-    const rec = Stock.getOrCreate(warehouseId, it.productId);
+    const rec = await Stock.getOrCreate(warehouseId, it.productId);
     if (rec.qty < it.qty) {
       throw new OrdersServiceError(409, "STOCK_INSUFFICIENT", "stock insuficiente");
     }
@@ -106,23 +121,23 @@ function createOrder(payload = {}) {
 
   for (const it of items) {
     try {
-      Stock.adjust(warehouseId, it.productId, -it.qty);
+      await Stock.adjust(warehouseId, it.productId, -it.qty);
     } catch (err) {
       throw new OrdersServiceError(500, "INTERNAL_ERROR", "INTERNAL_ERROR");
     }
   }
 
-  const totalCents = calcTotalCents(items);
-  const order = Orders.create({ customerId, warehouseId, items, totalCents });
+  const totalCents = await calcTotalCents(items);
+  const order = await Orders.create({ customerId, warehouseId, items, totalCents });
   return order;
 }
 
-function updateOrder(idValue, payload = {}) {
+async function updateOrder(idValue, payload = {}) {
   const id = parseId(idValue);
   if (!Number.isFinite(id)) {
     throw new OrdersServiceError(404, "ORDER_NOT_FOUND", "Order no encontrado");
   }
-  const order = findOrderById(id);
+  const order = await findOrderById(id);
   assertOrderIsAllocated(order);
 
   const errors = validateUpdateOrder(payload, order);
@@ -140,7 +155,7 @@ function updateOrder(idValue, payload = {}) {
 
   const productIds = new Set([...currentMap.keys(), ...newMap.keys()]);
   for (const pid of productIds) {
-    const product = findProductByIdActive(pid);
+    const product = await findProductByIdActive(pid);
     if (!product) {
       throw new OrdersServiceError(404, "PRODUCT_NOT_FOUND", "Producto no encontrado o inactivo");
     }
@@ -148,7 +163,7 @@ function updateOrder(idValue, payload = {}) {
     const next = newMap.get(pid) || 0;
     const delta = next - prev;
     if (delta > 0) {
-      const rec = Stock.getOrCreate(warehouseId, pid);
+      const rec = await Stock.getOrCreate(warehouseId, pid);
       if (rec.qty < delta) {
         throw new OrdersServiceError(409, "STOCK_INSUFFICIENT", "stock insuficiente");
       }
@@ -161,35 +176,35 @@ function updateOrder(idValue, payload = {}) {
     const delta = next - prev;
     if (delta !== 0) {
       try {
-        Stock.adjust(warehouseId, pid, -delta);
+        await Stock.adjust(warehouseId, pid, -delta);
       } catch (err) {
         throw new OrdersServiceError(500, "INTERNAL_ERROR", "INTERNAL_ERROR");
       }
     }
   }
 
-  const totalCents = calcTotalCents(items);
-  const updated = Orders.updateItemsAndTotal(order, items, totalCents);
+  const totalCents = await calcTotalCents(items);
+  const updated = await Orders.updateItemsAndTotal(order, items, totalCents);
   return updated;
 }
 
-function cancelOrder(idValue) {
+async function cancelOrder(idValue) {
   const id = parseId(idValue);
   if (!Number.isFinite(id)) {
     throw new OrdersServiceError(404, "ORDER_NOT_FOUND", "Order no encontrado");
   }
-  const order = findOrderById(id);
+  const order = await findOrderById(id);
   assertOrderIsAllocated(order, "order no cancelable");
 
   for (const it of order.items) {
     try {
-      Stock.adjust(order.warehouseId, it.productId, it.qty);
+      await Stock.adjust(order.warehouseId, it.productId, it.qty);
     } catch (err) {
       throw new OrdersServiceError(500, "INTERNAL_ERROR", "INTERNAL_ERROR");
     }
   }
-  Orders.setStatus(order, "cancelled");
-  return { id: order.id, status: order.status };
+  const updated = await Orders.setStatus(order, "cancelled");
+  return { id: updated.id, status: updated.status };
 }
 
 module.exports = {

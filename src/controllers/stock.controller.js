@@ -1,14 +1,23 @@
 const { httpError } = require("../utils/error");
 const { isPositiveInteger } = require("../utils/validate");
 const Stock = require("../models/stock.model");
-const { db } = require("../db/memory");
+const Warehouses = require("../models/warehouses.model");
+const Products = require("../models/products.model");
 
-function findWarehouseByIdActive(id) {
-  return db.warehouses.find((w) => w.id === id && w.deletedAt === null);
+async function findWarehouseByIdActive(id) {
+  const warehouse = await Warehouses.findById(id);
+  if (warehouse && warehouse.deletedAt === null) {
+    return warehouse;
+  }
+  return null;
 }
 
-function findProductByIdActive(id) {
-  return db.products.find((p) => p.id === id && p.deletedAt === null);
+async function findProductByIdActive(id) {
+  const product = await Products.findById(id);
+  if (product && product.deletedAt === null) {
+    return product;
+  }
+  return null;
 }
 
 async function adjust(req, res) {
@@ -23,13 +32,13 @@ async function adjust(req, res) {
     if (!Number.isFinite(d)) errors.push("delta invÃ¡lido");
     if (errors.length) return httpError(res, 400, "VALIDATION_ERROR", { details: errors });
 
-    const warehouse = findWarehouseByIdActive(wId);
+    const warehouse = await findWarehouseByIdActive(wId);
     if (!warehouse) return httpError(res, 404, "Warehouse no encontrado");
-    const product = findProductByIdActive(pId);
+    const product = await findProductByIdActive(pId);
     if (!product) return httpError(res, 404, "Producto no encontrado");
 
     try {
-      const rec = Stock.adjust(wId, pId, d);
+      const rec = await Stock.adjust(wId, pId, d);
       return res.status(200).json(rec);
     } catch (e) {
       if (e && e.message === "stock insuficiente") {
@@ -56,15 +65,15 @@ async function move(req, res) {
     if (!isPositiveInteger(q)) errors.push("qty debe ser > 0");
     if (errors.length) return httpError(res, 400, "VALIDATION_ERROR", { details: errors });
 
-    const fromW = findWarehouseByIdActive(fromId);
+    const fromW = await findWarehouseByIdActive(fromId);
     if (!fromW) return httpError(res, 404, "Warehouse origen no encontrado");
-    const toW = findWarehouseByIdActive(toId);
+    const toW = await findWarehouseByIdActive(toId);
     if (!toW) return httpError(res, 404, "Warehouse destino no encontrado");
-    const product = findProductByIdActive(pId);
+    const product = await findProductByIdActive(pId);
     if (!product) return httpError(res, 404, "Producto no encontrado");
 
     try {
-      const payload = Stock.move(fromId, toId, pId, q);
+      const payload = await Stock.move(fromId, toId, pId, q);
       return res.status(200).json(payload);
     } catch (e) {
       if (e && e.message === "stock insuficiente") {
@@ -81,7 +90,7 @@ async function list(req, res) {
   try {
     const warehouseId = req.query.warehouseId ? parseInt(req.query.warehouseId, 10) : null;
     const productId = req.query.productId ? parseInt(req.query.productId, 10) : null;
-    const items = Stock.list({ warehouseId, productId });
+    const items = await Stock.list({ warehouseId, productId });
     return res.status(200).json(items);
   } catch (err) {
     return httpError(res, 500, "INTERNAL_ERROR");
@@ -89,4 +98,3 @@ async function list(req, res) {
 }
 
 module.exports = { adjust, move, list };
-

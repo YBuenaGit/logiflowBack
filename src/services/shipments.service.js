@@ -1,4 +1,3 @@
-const { db } = require("../db/memory");
 const Orders = require("../models/orders.model");
 const Shipments = require("../models/shipments.model");
 const {
@@ -21,11 +20,11 @@ function parseId(value) {
   return Number.isFinite(num) ? num : NaN;
 }
 
-function findOrderById(id) {
-  return db.orders.find((o) => o.id === id);
+async function findOrderById(id) {
+  return Orders.findById(id);
 }
 
-function findShipmentById(id) {
+async function findShipmentById(id) {
   return Shipments.findById(id);
 }
 
@@ -38,7 +37,7 @@ function ensureOrderAllocatable(order) {
   }
 }
 
-function createShipment(payload = {}) {
+async function createShipment(payload = {}) {
   const errors = validateCreateShipment(payload);
   if (errors.length) {
     throw new ShipmentsServiceError(400, "VALIDATION_ERROR", "VALIDATION_ERROR", errors);
@@ -48,7 +47,7 @@ function createShipment(payload = {}) {
   if (!Number.isFinite(orderId)) {
     throw new ShipmentsServiceError(404, "ORDER_NOT_FOUND", "Order no encontrado");
   }
-  const order = findOrderById(orderId);
+  const order = await findOrderById(orderId);
   ensureOrderAllocatable(order);
 
   const destination = {
@@ -57,21 +56,21 @@ function createShipment(payload = {}) {
   if (payload.destination.lat !== undefined) destination.lat = Number(payload.destination.lat);
   if (payload.destination.lng !== undefined) destination.lng = Number(payload.destination.lng);
 
-  const shipment = Shipments.create({
+  const shipment = await Shipments.create({
     orderId,
     originWarehouseId: order.warehouseId,
     destination,
   });
-  Orders.setStatus(order, "shipped");
+  await Orders.setStatus(order, "shipped");
   return shipment;
 }
 
-function updateShipmentStatus(idValue, payload = {}) {
+async function updateShipmentStatus(idValue, payload = {}) {
   const id = parseId(idValue);
   if (!Number.isFinite(id)) {
     throw new ShipmentsServiceError(404, "SHIPMENT_NOT_FOUND", "Shipment no encontrado");
   }
-  const shipment = findShipmentById(id);
+  const shipment = await findShipmentById(id);
   if (!shipment) {
     throw new ShipmentsServiceError(404, "SHIPMENT_NOT_FOUND", "Shipment no encontrado");
   }
@@ -82,32 +81,32 @@ function updateShipmentStatus(idValue, payload = {}) {
   if (!validateShipmentStatusTransition(shipment.status, nextStatus)) {
     throw new ShipmentsServiceError(400, "TRANSITION_NOT_ALLOWED", "TRANSITION_NOT_ALLOWED");
   }
-  Shipments.setStatusAndTrack(shipment, nextStatus, payload?.note);
+  const updated = await Shipments.setStatusAndTrack(shipment, nextStatus, payload?.note);
   if (nextStatus === "delivered") {
-    const order = findOrderById(shipment.orderId);
-    if (order) Orders.setStatus(order, "delivered");
+    const order = await findOrderById(shipment.orderId);
+    if (order) await Orders.setStatus(order, "delivered");
   }
-  return shipment;
+  return updated;
 }
 
-function cancelShipment(idValue) {
+async function cancelShipment(idValue) {
   const id = parseId(idValue);
   if (!Number.isFinite(id)) {
     throw new ShipmentsServiceError(404, "SHIPMENT_NOT_FOUND", "Shipment no encontrado");
   }
-  const shipment = findShipmentById(id);
+  const shipment = await findShipmentById(id);
   if (!shipment) {
     throw new ShipmentsServiceError(404, "SHIPMENT_NOT_FOUND", "Shipment no encontrado");
   }
   if (shipment.status === "delivered") {
     throw new ShipmentsServiceError(409, "SHIPMENT_DELIVERED", "Shipment ya entregado");
   }
-  Shipments.cancel(shipment);
-  const order = findOrderById(shipment.orderId);
+  const cancelled = await Shipments.cancel(shipment);
+  const order = await findOrderById(shipment.orderId);
   if (order && order.status === "shipped") {
-    Orders.setStatus(order, "allocated");
+    await Orders.setStatus(order, "allocated");
   }
-  return { id: shipment.id, status: shipment.status };
+  return { id: cancelled.id, status: cancelled.status };
 }
 
 module.exports = {
