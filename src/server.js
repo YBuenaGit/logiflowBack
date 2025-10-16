@@ -11,6 +11,21 @@ app.use(express.urlencoded({ extended: true }));
 app.set("view engine", "pug");
 app.set("views", path.join(__dirname, "views"));
 
+// --- DB lazy init (una sola vez por proceso) ---
+let dbInitPromise = null;
+function ensureDb() {
+  if (!dbInitPromise) {
+    const uri = process.env.MONGODB_URI;
+    const dbName = process.env.MONGODB_DB;
+    dbInitPromise = connect({ uri, dbName });
+  }
+  return dbInitPromise;
+}
+// Conectamos antes de procesar cualquier request
+app.use((req, res, next) => {
+  ensureDb().then(() => next()).catch(next);
+});
+
 app.get("/", (req, res) => {
   return res.status(200).json({ ok: true, name: "logiflow-mvp" });
 });
@@ -34,19 +49,17 @@ app.use((err, req, res, next) => {
   return res.status(500).json({ message: "INTERNAL_ERROR" });
 });
 
-async function start() {
-  const uri = process.env.MONGODB_URI;
-  const dbName = process.env.MONGODB_DB;
-  await connect({ uri, dbName });
+module.exports = app;
 
-  const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
-  app.listen(PORT, () => {
-    console.log(`API on http://localhost:${PORT}`);
-    console.log(`\n*********************************\n      LOGIFLOW  GRUPO 14\n*********************************\n`);
+if (require.main === module) {
+  ensureDb().then(() => {
+    const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
+    app.listen(PORT, () => {
+      console.log(`API on http://localhost:${PORT}`);
+      console.log(`\n*********************************\n      LOGIFLOW  GRUPO 14\n*********************************\n`);
+    });
+  }).catch((err) => {
+    console.error("Failed to initialize application", err);
+    process.exit(1);
   });
 }
-
-start().catch((err) => {
-  console.error("Failed to initialize application", err);
-  process.exit(1);
-});
